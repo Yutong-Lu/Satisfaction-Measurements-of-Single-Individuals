@@ -1,0 +1,1281 @@
+---
+title: "Relationship-codes"
+author: "Yutong Lu"
+date: '`r Sys.Date()`'
+output: pdf_document
+---
+
+# Load libraries
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, echo = FALSE)
+
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(gtsummary)
+library(patchwork)
+library(kableExtra)
+library(ordinal)
+library(lmerTest)
+library(pomcheckr)
+```
+
+# Data manipulation
+
+```{r, message=FALSE, warning=FALSE, cache=TRUE, echo = FALSE}
+
+##################
+#### baseline ####
+##################
+
+# import data
+survey1_raw <- read_excel("merged_data.xlsx", sheet = "merged_data")
+
+# select variables
+survey1 <- survey1_raw %>% 
+  filter(PID != "NA") %>% # one PID is NA, along with other variables
+  filter(orientation != 6) %>% # filter "I choose not to answer"
+  filter(gender != 2 & gender != 3) %>% # filter "I prefer not to disclose" and "other"
+  dplyr::select(PID, age, gender, race, orientation, 
+         relationship_history, relationship_end, 
+         SWRS_1, Sexual.Satisfaction, LS, UCLA_1, UCLA_2, UCLA_3) %>% 
+  mutate(gender = case_when(gender == 0 ~ "Male",
+                            gender == 1 ~ "Female",
+                            TRUE ~ "Other"),
+         race = case_when(race == 0 ~ "Caucasian",
+                          race == 1 ~ "Latino/Hispanic",
+                          race == 2 ~ "Middle Eastern",
+                          race == 3 ~ "African",
+                          race == 4 ~ "Caribbean",
+                          race == 5 ~ "South Asian",
+                          race == 6 ~ "East Asian",
+                         TRUE ~ "Other"),
+         orientation = case_when(orientation == 0 ~ "Heterosexual",
+                                 orientation == 1 ~ "Gay",
+                                 orientation == 2 ~ "Lesbian",
+                                 orientation == 3 ~ "Bisexual",
+                                 orientation == 4 ~ "Queer",
+                                 orientation == 5 ~ "Questioning",
+                                 TRUE ~ "Other"),
+         orientation.agg = case_when(orientation == "Heterosexual" ~ "Heterosexual",
+                                     TRUE ~ "LGBQQ"),
+         # end time for always single people
+         relationship_end = case_when(relationship_end == "NA" ~ "-999", 
+                                      TRUE ~ relationship_end)) %>% 
+  mutate(remove = case_when(gender == "Male" & orientation == "Lesbian" ~ 1,
+                            gender == "Female" & orientation == "Gay" ~ 1,
+                            TRUE ~ 0),
+         orientation = case_when(orientation == "Gay" | orientation == "Lesbian" ~ "Homosexual",
+                                 TRUE ~ orientation)) %>% 
+  filter(remove != 1) %>% 
+  select(-remove)
+
+# loneliness scale
+names(survey1)[names(survey1) == 'UCLA_1'] <- 'UCLA1_1'
+names(survey1)[names(survey1) == 'UCLA_2'] <- 'UCLA2_1'
+names(survey1)[names(survey1) == 'UCLA_3'] <- 'UCLA3_1'
+survey1$UCLA1_1 <- factor(survey1$UCLA1_1, levels = c("1", "2", "3", "4"))
+survey1$UCLA2_1 <- factor(survey1$UCLA2_1, levels = c("1", "2", "3", "4"))
+survey1$UCLA3_1 <- factor(survey1$UCLA3_1, levels = c("1", "2", "3", "4"))
+
+# life satisfaction
+names(survey1)[names(survey1) == 'LS'] <- 'LS_1'
+survey1$LS_1 <- factor(survey1$LS_1, levels = c("1", "2", "3", "4"))
+
+# sexual satisfaction
+names(survey1)[names(survey1) == 'Sexual.Satisfaction'] <- 'sexual.satisfaction_1'
+survey1$sexual.satisfaction_1 <- factor(survey1$sexual.satisfaction_1, 
+                                      levels = c("1", "2", "3", "4", "5", "6", "7"))
+
+# relationship status satisfaction
+names(survey1)[names(survey1) == 'SWRS_1'] <- 'SWRS1_1'
+names(survey1)[names(survey1) == 'relationship_history'] <- 'relationship.history_1'
+names(survey1)[names(survey1) == 'relationship_end'] <- 'relationship.end_1'
+
+survey1$SWRS1_1 <- factor(survey1$SWRS1_1, levels = c("0", "1", "2", "3"))
+survey1$relationship.history_1 <- as.factor(survey1$relationship.history_1)
+survey1$relationship.end_1 <- as.numeric(survey1$relationship.end_1)
+
+# wrong entry in relationship end
+# study done Jan last year 
+# impute new values? highlight the outliers
+survey1 <- survey1 %>% 
+  mutate(relationship.end_1 = 
+           case_when(relationship.end_1 == -999 ~ age*12,
+                     relationship.end_1 < age*12 ~ relationship.end_1, 
+                     # correct for people entered years
+                     relationship.end_1 > 2000 ~ (relationship.end_1-2000)*12,  
+                    TRUE ~ 30)) %>% # change to sample mean after correcting for other people
+      mutate(UCLA1 = as.numeric(UCLA1_1),
+         UCLA2 = as.numeric(UCLA2_1),
+         UCLA3 = as.numeric(UCLA3_1),
+         loneliness_1 = as.factor(UCLA1+UCLA2+UCLA3)) %>% 
+  select(-c(UCLA1, UCLA2,UCLA3))
+
+# Get sample mean of the relationship end time
+# survey1 %>% 
+#   filter(relationship.end_1 != 1200 & relationship.end_1 != age*12) %>% 
+#   summarise(mean=mean(relationship.end_1)) # sample mean of 30.11569
+# 
+# Examine data
+# glimpse(survey1)
+# sum(is.na(survey1))
+# 
+# Check which one is NA
+# which(is.na(survey1$sexual.satisfaction_1)) #no1890 is NA
+
+###################
+#### follow-up ####
+###################
+
+
+# import data
+survey2_raw <- read_excel("Autonomous_Motivations_FU.xlsx", sheet = "Dataset")
+
+# select variables
+survey2 <- survey2_raw[-1,] %>% 
+  clean_names() %>% 
+  dplyr::select(pid, relationship, relationship_history, relationship_end, 
+         swrs_1, sexual_satisfaction, ls, ucla_1, ucla_2, ucla_3, number_people_dated) %>% 
+  dplyr::mutate(relationship_2 = case_when(relationship == "Yes" ~ "1",
+                                           # relationship status in the first survey are all 0
+                                           relationship == "No" ~ "0"), 
+         relationship.end_2 = case_when(relationship == "Yes" & is.na(relationship_end) ~ "0", 
+                                        # if NA, this person could currently be in a relationship
+                                        relationship == "No" & is.na(relationship_end) ~ "-999",
+                                        TRUE ~ relationship_end),
+         relationship.history_2 = case_when(relationship_history == "Yes" ~ "1",
+                                          relationship_history == "No" ~ "0",
+                                          # if NA, then this person is currently in a relationship
+                                          TRUE ~ "1"), 
+         LS_2 = case_when(ls == "Very Dissatisfied  1" ~ "1",
+                        ls == "Very Satisfied  4" ~ "4",
+                        TRUE ~ ls),
+         # How satisfied are you with your current relationship status? 
+         # Those who are in a relationship answer this question too, not exclusive to single status.
+         SWRS1_2 = case_when(swrs_1 == "Not At All  0" ~ "0",
+                            swrs_1 == "A Little  1" ~ "1",
+                            swrs_1 == "To Quite Some Extent  2" ~ "2",
+                            swrs_1 == "To A Great Extent  3" ~ "3"),
+         sexual.satisfaction_2 = case_when(
+           sexual_satisfaction == "Very Dissatisfied" ~ "1",
+           sexual_satisfaction == "Dissatisfied" ~ "2",
+           sexual_satisfaction == "Somewhat Dissatisfied" ~ "3",
+           sexual_satisfaction == "Neither Satisfied Nor Dissatisfied" ~ "4",
+           sexual_satisfaction == "Somewhat Satisfied" ~ "5",
+           sexual_satisfaction == "Satisfied" ~ "6",
+           sexual_satisfaction == "Very Satisfied" ~ "7"),
+         UCLA1_2 = case_when(ucla_1 == "Hardly Ever  1" ~ "1",
+                            ucla_1 == "Some of the Time  2" ~ "2",
+                            ucla_1 == "Often  3" ~ "3",
+                            ucla_1 == "Click to write Scale Point 4" ~ "4"),
+         UCLA2_2 = case_when(ucla_2 == "Hardly Ever  1" ~ "1",
+                            ucla_2 == "Some of the Time  2" ~ "2",
+                            ucla_2 == "Often  3" ~ "3",
+                            ucla_2 == "Click to write Scale Point 4" ~ "4"),
+         UCLA3_2 = case_when(ucla_3 == "Hardly Ever  1" ~ "1",
+                            ucla_3 == "Some of the Time  2" ~ "2",
+                            ucla_3 == "Often  3" ~ "3",
+                            ucla_3 == "Click to write Scale Point 4" ~ "4")) %>% 
+  select(-c(relationship, relationship_history, relationship_end,
+            swrs_1, ls, sexual_satisfaction, ucla_1, ucla_2, ucla_3)) 
+
+names(survey2)[names(survey2) == 'pid'] <- 'PID'
+
+# loneliness scale
+survey2$UCLA1_2 <- factor(survey2$UCLA1_2, levels = c("1", "2", "3", "4"))
+survey2$UCLA2_2 <- factor(survey2$UCLA2_2, levels = c("1", "2", "3", "4"))
+survey2$UCLA3_2 <- factor(survey2$UCLA3_2, levels = c("1", "2", "3", "4"))
+
+# life satisfaction
+survey2$LS_2 <- factor(survey2$LS_2, levels = c("1", "2", "3", "4"))
+
+# sexual satisfaction
+survey2$sexual.satisfaction_2 <- factor(survey2$sexual.satisfaction_2, 
+                                      levels = c("1", "2", "3", "4", "5", "6", "7"))
+
+# relationship status satisfaction
+names(survey2)[names(survey2) == 'number_people_dated'] <- 'number.people.dated'
+survey2$number.people.dated <- as.numeric(survey2$number.people.dated)
+
+survey2$SWRS1_2 <- factor(survey2$SWRS1_2, levels = c("0", "1", "2", "3"))
+survey2$relationship.history_2 <- as.factor(survey2$relationship.history_2)
+survey2$relationship.end_2 <- as.numeric(survey2$relationship.end_2)
+survey2$relationship_2 <- as.logical(as.numeric(survey2$relationship_2)) 
+# made it logical for plotting purposes
+
+survey2 <- survey2 %>% 
+  mutate(UCLA1 = as.numeric(UCLA1_2),
+         UCLA2 = as.numeric(UCLA2_2),
+         UCLA3 = as.numeric(UCLA3_2),
+         loneliness_2 = as.factor(UCLA1+UCLA2+UCLA3)) %>% 
+  select(-c(UCLA1, UCLA2,UCLA3))
+
+# glimpse(survey2)
+# sum(is.na(survey2))
+# 
+# which(is.na(survey2$sexual.satisfaction_2)) #no1873 NA
+
+survey2.allsingle <- survey2 %>% 
+  filter(relationship_2 == FALSE) %>% 
+  select(-relationship_2)
+
+###############
+#### merge ####
+###############
+
+
+merged.wide <- merge(survey1,survey2.allsingle,by="PID") %>% 
+  mutate(relationship.end_2 = case_when(relationship.end_2 == -999 ~ age*12 + 6,
+                                        TRUE ~ relationship.end_2)) %>% 
+  mutate(remove = case_when(gender == "Male" & orientation == "Lesbian" ~ 1,
+                            gender == "Female" & orientation == "Gay" ~ 1,
+                            TRUE ~ 0),
+         orientation = case_when(orientation == "Gay" | orientation == "Lesbian" ~ "Homosexual",
+                                 TRUE ~ orientation)) %>% 
+  filter(remove != 1) %>% 
+  select(-remove)
+
+merged.long <- merged.wide %>% 
+  pivot_longer(cols = -c(PID,age,gender,orientation,race,orientation.agg,
+                         number.people.dated), 
+              names_to = c(".value", "surveyNo"),
+              names_sep = "_")
+
+merged.average <- merged.wide %>% 
+   mutate(SWRS1 = as.factor((as.numeric(SWRS1_1) + as.numeric(SWRS1_2))/2),
+          sexual.satisfaction = case_when(
+            is.na(sexual.satisfaction_1) == F & is.na(sexual.satisfaction_2) == F ~ as.factor((as.numeric(sexual.satisfaction_1) + as.numeric(sexual.satisfaction_2))/2),
+            is.na(sexual.satisfaction_1) ~ sexual.satisfaction_2,
+            is.na(sexual.satisfaction_2) ~ sexual.satisfaction_1),
+          LS = as.factor((as.numeric(LS_1)+ as.numeric(LS_2))/2),
+          loneliness = as.factor((as.numeric(loneliness_1)+ as.numeric(loneliness_2))/2),
+          relationship.end = (relationship.end_1 + relationship.end_2)/2) %>%
+  select(PID, age, gender, orientation, orientation.agg, SWRS1, sexual.satisfaction, 
+         LS, loneliness, relationship.end, race)
+
+survey1$orientation <- factor(survey1$orientation, 
+                               levels = c("Heterosexual","Homosexual","Bisexual","Queer","Questioning","Other"))
+merged.wide$orientation <- factor(merged.wide$orientation, 
+                               levels = c("Heterosexual","Homosexual","Bisexual","Queer","Questioning","Other"))
+merged.average$orientation <- factor(merged.average$orientation, 
+                               levels = c("Heterosexual","Homosexual","Bisexual","Queer","Questioning","Other"))
+merged.long$orientation <- factor(merged.long$orientation, 
+                               levels = c("Heterosexual","Homosexual","Bisexual","Queer","Questioning","Other"))
+```
+
+```{r}
+merged.wide %>% 
+  group_by(orientation, gender) %>% 
+  summarise(n = n()) %>% 
+  kable(booktab = T,
+        linesep = "",
+        col.names = c("Sexual orientation", "Gender", "Count"),
+        caption = "Merged data set sexual orientation and gender subgroups.") %>% 
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+# Fit the models
+
+## Write custom functions to fit models
+
+```{r, echo = FALSE}
+mymodels1 <- function(df, respIdx){
+  fits <- list()
+  fits$model1 <- clm(unlist(df[, respIdx]) ~ orientation.agg, data = df)
+  fits$model2 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender, data = df)
+  fits$model3 <- clm(unlist(df[, respIdx]) ~ orientation.agg + age + race + 
+                       relationship.end_1, data = df)
+  fits$model4 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender + age + race + 
+                       relationship.end_1, data = df)
+  
+  fits$model5 <- clm(unlist(df[, respIdx]) ~ orientation, data = df)
+  fits$model6 <- clm(unlist(df[, respIdx]) ~ orientation*gender, data = df)
+  fits$model7 <- clm(unlist(df[, respIdx]) ~ orientation + age + race + 
+                       relationship.end_1, data = df)
+  fits$model8 <- clm(unlist(df[, respIdx]) ~ orientation*gender + age + race + 
+                       relationship.end_1, data = df)
+  return(fits)
+}
+
+mymodels2 <- function(df, respIdx){
+  fits <- list()
+  fits$model1 <- clm(unlist(df[, respIdx]) ~ orientation.agg, data = df)
+  fits$model2 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender, data = df)
+  fits$model3 <- clm(unlist(df[, respIdx]) ~ orientation.agg + age + race + 
+                       relationship.end_2, data = df)
+  fits$model4 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender + age + 
+                       race + relationship.end_2, data = df)
+  
+  fits$model5 <- clm(unlist(df[, respIdx]) ~ orientation, data = df)
+  fits$model6 <- clm(unlist(df[, respIdx]) ~ orientation*gender, data = df)
+  fits$model7 <- clm(unlist(df[, respIdx]) ~ orientation + age + race + 
+                       relationship.end_2, data = df)
+  fits$model8 <- clm(unlist(df[, respIdx]) ~ orientation*gender + age + race + 
+                       relationship.end_2, data = df)
+  return(fits)
+}
+
+mymodelsavg <- function(df, respIdx){
+  fits <- list()
+  fits$model1 <- clm(unlist(df[, respIdx]) ~ orientation.agg, data = df)
+  fits$model2 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender, data = df)
+  fits$model3 <- clm(unlist(df[, respIdx]) ~ orientation.agg + age + race + 
+                       relationship.end, data = df)
+  fits$model4 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender + age + 
+                       race + relationship.end, data = df)
+  
+  fits$model5 <- clm(unlist(df[, respIdx]) ~ orientation, data = df)
+  fits$model6 <- clm(unlist(df[, respIdx]) ~ orientation*gender, data = df)
+  fits$model7 <- clm(unlist(df[, respIdx]) ~ orientation + age + race + 
+                       relationship.end, data = df)
+  fits$model8 <- clm(unlist(df[, respIdx]) ~ orientation*gender + age + race + 
+                       relationship.end, data = df)
+  return(fits)
+}
+
+mymodelsmixed <- function(df, respIdx){
+  fits <- list()
+  fits$model1 <- clmm(unlist(df[, respIdx]) ~ orientation.agg + 
+                        (1 | PID), data = df)
+  fits$model2 <- clmm(unlist(df[, respIdx]) ~ orientation.agg*gender+ 
+                        (1 | PID), data = df)
+  fits$model3 <- clmm(unlist(df[, respIdx]) ~ orientation.agg + age + race + 
+                        relationship.end+ (1 | PID), data = df)
+  fits$model4 <- clmm(unlist(df[, respIdx]) ~ orientation.agg*gender + age + 
+                        race + relationship.end + (1 | PID), data = df)
+  
+  fits$model5 <- clmm(unlist(df[, respIdx]) ~ orientation + 
+                        (1 | PID), data = df)
+  fits$model6 <- clmm(unlist(df[, respIdx]) ~ orientation*gender + 
+                        (1 | PID), data = df)
+  fits$model7 <- clmm(unlist(df[, respIdx]) ~ orientation + age + race + 
+                        relationship.end + (1 | PID), data = df)
+  fits$model8 <- clmm(unlist(df[, respIdx]) ~ orientation*gender + age + 
+                        race + relationship.end + (1 | PID), data = df)
+  return(fits)
+}
+```
+
+## Fitting the models
+
+ls = life satisfaction
+rs = relationship satisfaction
+ll = loneliness
+ss = sexual satisfaction
+
+```{r wave1, cache=TRUE, warning=FALSE, echo = FALSE}
+# WAVE 1
+wave1_ls <- mymodels1(survey1, 10)
+wave1_rs <- mymodels1(survey1, 8)
+wave1_ll <- mymodels1(survey1, 15)
+
+survey11 <- survey1 %>% 
+  filter(is.na(sexual.satisfaction_1)==FALSE)
+
+wave1_ss <- mymodels1(survey11, 9)
+```
+
+
+```{r wave2, cache=TRUE, warning=FALSE, echo = FALSE}
+# WAVE 2
+wave2_ls <- mymodels2(merged.wide, 19)
+wave2_rs <- mymodels2(merged.wide, 20)
+wave2_ll <- mymodels2(merged.wide, 22)
+
+merged.wide1 <- merged.wide %>% 
+  filter(is.na(sexual.satisfaction_1)==FALSE)
+
+wave2_ss <- mymodels2(merged.wide1, 21)
+```
+
+
+```{r bothwaves, cache=TRUE, warning=FALSE, echo=FALSE}
+# BOTH WAVES
+
+## AVERAGE
+avg_ls <- mymodelsavg(merged.average, 8)
+avg_rs <- mymodelsavg(merged.average, 6)
+avg_ll <- mymodelsavg(merged.average, 9)
+avg_ss <- mymodelsavg(merged.average, 7)
+
+
+## RANDOM EFFECTS
+
+mixed_ls <- mymodelsmixed(merged.long, 13)
+mixed_rs <- mymodelsmixed(merged.long, 11)
+mixed_ll <- mymodelsmixed(merged.long, 17)
+
+merged.long1 <- merged.long %>% 
+  filter(is.na(sexual.satisfaction)==F)
+
+mixed_ss <- mymodelsmixed(merged.long1, 12)
+```
+
+# Custom functions to extract coefficients from model summaries
+
+```{r, echo=FALSE}
+
+
+findmycoef_ls <- function(outcome){
+  mylist = list()
+  
+  for (i in 1:length(wave1_ls)){
+    ifelse(outcome %in% rownames(summary(wave1_ls[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave1_ls[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(wave2_ls)){
+    ifelse(outcome %in% rownames(summary(wave2_ls[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave2_ls[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(avg_ls)){
+    ifelse(outcome %in% rownames(summary(avg_ls[[i]])$coefficients),
+           mylist <- append(mylist,summary(avg_ls[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(mixed_ls)){
+    ifelse(outcome %in% rownames(summary(mixed_ls[[i]])$coefficients),
+           mylist <- append(mylist,summary(mixed_ls[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  mycoef <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4) %>% 
+    select(-c(V1, V2, V3, V4))
+  return(mycoef)
+}
+
+findmycoef_ss <- function(outcome){
+  mylist = list()
+  
+  for (i in 1:length(wave1_ss)){
+    ifelse(outcome %in% rownames(summary(wave1_ss[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave1_ss[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(wave2_ss)){
+    ifelse(outcome %in% rownames(summary(wave2_ss[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave2_ss[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(avg_ss)){
+    ifelse(outcome %in% rownames(summary(avg_ss[[i]])$coefficients),
+           mylist <- append(mylist,summary(avg_ss[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(mixed_ss)){
+    ifelse(outcome %in% rownames(summary(mixed_ss[[i]])$coefficients),
+           mylist <- append(mylist,summary(mixed_ss[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  mycoef <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4) %>% 
+    select(-c(V1, V2, V3, V4))
+  return(mycoef)
+}
+
+findmycoef_rs <- function(outcome){
+  mylist = list()
+  
+  for (i in 1:length(wave1_rs)){
+    ifelse(outcome %in% rownames(summary(wave1_rs[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave1_rs[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(wave2_rs)){
+    ifelse(outcome %in% rownames(summary(wave2_rs[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave2_rs[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(avg_rs)){
+    ifelse(outcome %in% rownames(summary(avg_rs[[i]])$coefficients),
+           mylist <- append(mylist,summary(avg_rs[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(mixed_rs)){
+    ifelse(outcome %in% rownames(summary(mixed_rs[[i]])$coefficients),
+           mylist <- append(mylist,summary(mixed_rs[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  mycoef <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4) %>% 
+    select(-c(V1, V2, V3, V4))
+  return(mycoef)
+}
+
+findmycoef_ll <- function(outcome){
+  mylist = list()
+  
+  for (i in 1:length(wave1_ll)){
+    ifelse(outcome %in% rownames(summary(wave1_ll[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave1_ll[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(wave2_ll)){
+    ifelse(outcome %in% rownames(summary(wave2_ll[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave2_ll[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(avg_ll)){
+    ifelse(outcome %in% rownames(summary(avg_ll[[i]])$coefficients),
+           mylist <- append(mylist,summary(avg_ll[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(mixed_ll)){
+    ifelse(outcome %in% rownames(summary(mixed_ll[[i]])$coefficients),
+           mylist <- append(mylist,summary(mixed_ll[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  mycoef <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4) %>% 
+    select(-c(V1, V2, V3, V4))
+  return(mycoef)
+}
+```
+
+# Get all coefficients for each predictor from 128 universes
+
+```{r, echo=FALSE}
+
+# Life satisfaction Models
+
+aggLGBQQ <- findmycoef_ls("orientation.aggLGBQQ")
+aggLGBQQ_Male <- findmycoef_ls("orientation.aggLGBQQ:genderMale")
+male <-  findmycoef_ls("genderMale")
+oriHomo <- findmycoef_ls("orientationHomosexual")
+oriBi <- findmycoef_ls("orientationBisexual")
+oriOther <- findmycoef_ls("orientationOther")
+oriQueer <- findmycoef_ls("orientationQueer")
+oriQuestion <- findmycoef_ls("orientationQuestioning")
+HomoMale <- findmycoef_ls("orientationHomosexual:genderMale")
+BiMale <- findmycoef_ls("orientationBisexual:genderMale")
+OtherMale <- findmycoef_ls("orientationOther:genderMale")
+QueerMale <- findmycoef_ls("orientationQueer:genderMale")
+QuestionMale <- findmycoef_ls("orientationQuestioning:genderMale")
+
+# Sexual satisfaction Models
+
+aggLGBQQss <- findmycoef_ss("orientation.aggLGBQQ")
+aggLGBQQ_Maless <- findmycoef_ss("orientation.aggLGBQQ:genderMale")
+maless <-  findmycoef_ss("genderMale")
+oriHomoss <- findmycoef_ss("orientationHomosexual")
+oriBiss <- findmycoef_ss("orientationBisexual")
+oriOtherss <- findmycoef_ss("orientationOther")
+oriQueerss <- findmycoef_ss("orientationQueer")
+oriQuestionss <- findmycoef_ss("orientationQuestioning")
+HomoMaless <- findmycoef_ss("orientationHomosexual:genderMale")
+BiMaless <- findmycoef_ss("orientationBisexual:genderMale")
+OtherMaless <- findmycoef_ss("orientationOther:genderMale")
+QueerMaless <- findmycoef_ss("orientationQueer:genderMale")
+QuestionMaless <- findmycoef_ss("orientationQuestioning:genderMale")
+
+# Relationship satisfaction
+
+aggLGBQQrs <- findmycoef_rs("orientation.aggLGBQQ")
+aggLGBQQ_Malers <- findmycoef_rs("orientation.aggLGBQQ:genderMale")
+malers <-  findmycoef_rs("genderMale")
+oriHomors <- findmycoef_rs("orientationHomosexual")
+oriBirs <- findmycoef_rs("orientationBisexual")
+oriOtherrs <- findmycoef_rs("orientationOther")
+oriQueerrs <- findmycoef_rs("orientationQueer")
+oriQuestionrs <- findmycoef_rs("orientationQuestioning")
+HomoMalers <- findmycoef_rs("orientationHomosexual:genderMale")
+BiMalers <- findmycoef_rs("orientationBisexual:genderMale")
+OtherMalers <- findmycoef_rs("orientationOther:genderMale")
+QueerMalers <- findmycoef_rs("orientationQueer:genderMale")
+QuestionMalers <- findmycoef_rs("orientationQuestioning:genderMale")
+
+# total loneliness score
+
+aggLGBQQll <- findmycoef_ll("orientation.aggLGBQQ")
+aggLGBQQ_Malell <- findmycoef_ll("orientation.aggLGBQQ:genderMale")
+malell <-  findmycoef_ll("genderMale")
+oriHomoll <- findmycoef_ll("orientationHomosexual")
+oriBill <- findmycoef_ll("orientationBisexual")
+oriOtherll <- findmycoef_ll("orientationOther")
+oriQueerll <- findmycoef_ll("orientationQueer")
+oriQuestionll <- findmycoef_ll("orientationQuestioning")
+HomoMalell <- findmycoef_ll("orientationHomosexual:genderMale")
+BiMalell <- findmycoef_ll("orientationBisexual:genderMale")
+OtherMalell <- findmycoef_ll("orientationOther:genderMale")
+QueerMalell <- findmycoef_ll("orientationQueer:genderMale")
+QuestionMalell <- findmycoef_ll("orientationQuestioning:genderMale")
+```
+
+# Figures
+
+```{r, fig.width=10, fig.height=7.8, fig.cap = "Significance frequency of variables in the models for four responses. Only the variables that had a p-value < 0.05 in at least one model were included in this figure, and their direction of effects were color-coded differently in models where they were significant (filling) or in all models (outline). Note that the variable heterosexual was the reference level and thus not showing in the models.", echo=FALSE}
+MyPalette2 <- c("all positive" = "#CA35A6", "all negative" = "#A6CA35", 
+               "either positive or negative" = "#35A6CA")
+
+ls <- cbind(rep(c("LGBQQ", "LGBQQ:Male", "Male", "Homosexual", "Bisexual", 
+                  "Other", "Queer", "Questioning", "Homosexual:Male", 
+                  "Bisexual:Male", "Other:Male", "Queer:Male", 
+                  "Questioning:Male"), each = 32), 
+      rbind(aggLGBQQ, aggLGBQQ_Male, male, oriHomo, oriBi,  oriOther, 
+            oriQueer, oriQuestion, HomoMale, BiMale, OtherMale, QueerMale, 
+            QuestionMale))
+
+colnames(ls)[1] <- "variable"
+
+pval1 <- ls %>% 
+  group_by(variable) %>% 
+  summarise(inmod = sum(estimate != 0 | is.na(estimate)),
+            sig = sum(estimate != 0 & is.na(pval) == F & pval < 0.05),
+            effsig = case_when(
+              sum(estimate > 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all positive",
+              sum(estimate < 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all negative",
+              TRUE ~ "either positive or negative"),
+            eff = case_when(sum(estimate > 0) == inmod ~ "all positive",
+                               sum(estimate < 0) == inmod ~ "all negative",
+                               TRUE ~ "either positive or negative"),
+            freq = sig/inmod) %>% 
+  filter(sig != 0) %>% 
+  ggplot(aes(variable, fill = effsig)) +
+  geom_bar(aes(y=freq, color = eff), stat="identity", width = 0.6, size = 2) +
+  labs(x = "Variable",
+       y = "Significance frequency",
+       title = "1.A: Life satisfaction",
+       color = "Direction of all effect",
+       fill = "Direction of significant effect") + 
+  theme_minimal()  +
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 10),
+        plot.title = element_text(size = 11)) +
+  coord_flip() +
+  scale_fill_manual(values = MyPalette2)+
+  scale_color_manual(values = MyPalette2)
+
+ss <- cbind(rep(c("LGBQQ", "LGBQQ:Male", "Male", "Homosexual", "Bisexual", 
+                  "Other", "Queer", "Questioning", "Homosexual:Male", 
+                  "Bisexual:Male", "Other:Male", "Queer:Male", 
+                  "Questioning:Male"), each = 32), 
+      rbind(aggLGBQQss, aggLGBQQ_Maless, maless, oriHomoss, oriBiss, 
+            oriOtherss, oriQueerss, oriQuestionss, HomoMaless, 
+            BiMaless, OtherMaless, QueerMaless, QuestionMaless))
+
+colnames(ss)[1] <- "variable"
+
+pval2 <- ss %>% 
+  group_by(variable) %>% 
+  summarise(inmod = sum(estimate != 0 | is.na(estimate)),
+            sig = sum(estimate != 0 & is.na(pval) == F & pval < 0.05),
+            effsig = case_when(
+              sum(estimate > 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all positive",
+              sum(estimate < 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all negative",
+              TRUE ~ "either positive or negative"),
+            eff = case_when(sum(estimate > 0) == inmod ~ "all positive",
+                               sum(estimate < 0) == inmod ~ "all negative",
+                               TRUE ~ "either positive or negative"),
+            freq = sig/inmod) %>% 
+  filter(sig != 0) %>% 
+  ggplot(aes(variable, fill = effsig)) +
+  geom_bar(aes(y=freq, color = eff), stat="identity", width = 0.6, size = 2) +
+  labs(x = "Variable",
+       y = "Significance frequency",
+       title = "1.B: Sexual satisfaction",
+       color = "Direction of all effect",
+       fill = "Direction of significant effect") + 
+  theme_minimal() +
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 10),
+        plot.title = element_text(size = 11)) +
+  coord_flip() +
+  scale_fill_manual(values = MyPalette2)+
+  scale_color_manual(values = MyPalette2)
+
+rs <- cbind(rep(c("LGBQQ", "LGBQQ:Male", "Male", "Homosexual", "Bisexual", 
+                  "Other", "Queer", "Questioning", "Homosexual:Male", 
+                  "Bisexual:Male", "Other:Male", "Queer:Male", 
+                  "Questioning:Male"), each = 32),  
+      rbind(aggLGBQQrs, aggLGBQQ_Malers, malers, oriHomors, oriBirs, 
+            oriOtherrs, oriQueerrs, oriQuestionrs, HomoMalers, 
+            BiMalers, OtherMalers, QueerMalers, QuestionMalers))
+
+colnames(rs)[1] <- "variable"
+
+pval3 <- rs %>% 
+  group_by(variable) %>% 
+  summarise(inmod = sum(estimate != 0 | is.na(estimate)),
+            sig = sum(estimate != 0 & is.na(pval) == F &  pval < 0.05),
+            effsig = case_when(
+              sum(estimate > 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all positive",
+              sum(estimate < 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all negative",
+              TRUE ~ "either positive or negative"),
+            eff = case_when(sum(estimate > 0) == inmod ~ "all positive",
+                               sum(estimate < 0) == inmod ~ "all negative",
+                               TRUE ~ "either positive or negative"),
+            freq = sig/inmod) %>% 
+  filter(sig != 0) %>% 
+  ggplot(aes(variable, fill = effsig)) +
+  geom_bar(aes(y=freq, color = eff), stat="identity",width = 0.6, size = 2) +
+  labs(x = "Variable",
+       y = "Significance frequency",
+       title = "1.C: Satisfaction of singlehood",
+       color = "Direction of all effect",
+       fill = "Direction of significant effect") + 
+  theme_minimal()+
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 10),
+        plot.title = element_text(size = 11)) +
+  coord_flip() +
+  scale_fill_manual(values = MyPalette2) +
+  scale_color_manual(values = MyPalette2)
+
+ll <- cbind(rep(c("LGBQQ", "LGBQQ:Male", "Male", "Homosexual", "Bisexual", 
+                  "Other", "Queer", "Questioning", "Homosexual:Male", 
+                  "Bisexual:Male", "Other:Male", "Queer:Male", 
+                  "Questioning:Male"), each = 32),  
+      rbind(aggLGBQQll, aggLGBQQ_Malell, malell, oriHomoll, oriBill, 
+            oriOtherll, oriQueerll, oriQuestionll, HomoMalell, 
+            BiMalell, OtherMalell, QueerMalell, QuestionMalell))
+
+colnames(ll)[1] <- "variable"
+
+pval4 <- ll %>% 
+  group_by(variable) %>% 
+  summarise(inmod = sum(estimate != 0 | is.na(estimate)),
+            sig = sum(estimate != 0 & is.na(pval) == F & pval < 0.05),
+            effsig = case_when(
+              sum(estimate > 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all positive",
+              sum(estimate < 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all negative",
+              TRUE ~ "either positive or negative"),
+            eff = case_when(sum(estimate > 0) == inmod ~ "all positive",
+                            sum(estimate < 0) == inmod ~ "all negative",
+                            TRUE ~ "either positive or negative"),
+            freq = sig/inmod) %>% 
+  filter(sig != 0) %>% 
+  ggplot(aes(variable, fill = effsig)) +
+  geom_bar(aes(y=freq, color = eff), stat="identity", width = 0.6, size = 2) +
+  labs(x = "Variable",
+       y = "Significance frequency",
+       title = "1.D: Total loneliness score",
+       color = "Direction of all effect",
+       fill = "Direction of significant effect") + 
+  theme_minimal() +
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 10),
+        plot.title = element_text(size = 11)) +
+  scale_fill_manual(values = MyPalette2) +
+  coord_flip() +
+  ylim(0, 1) +
+  scale_color_manual(values = MyPalette2)
+
+(pval1 + pval2 + pval3 + pval4) + plot_layout(guides = 'collect')
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=7.4, fig.cap="Estimates, confidence intervals and significance of LGBQQ. The statistical significance was color-coded, and confidence\nintervals were shown as error bars. The dots at the axis with 0 estimate indicated that LGBQQ was not in the model. All red dots\n(significant) had the same direction of effect, whereas the yellow dots (insignificant) may have the opposite direction of effect, as\nshown in the case of total loneliness score."}
+MyPalette <- c("Significant" = "#A92420", "Not significant" = "#D1913E", "Not in model" = "#2B5615")
+
+fig2ls <- aggLGBQQ %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 6, angle = 90, vjust = 0.5),
+        legend.key.size = unit(0.5, 'cm')) +
+  labs(x = "Universe", y = "Estimate of LGBQQ", 
+       title = "2.A: Life satisfaction", color= "Statistical Significance") +
+  scale_color_manual(values = MyPalette)
+
+fig2ss <- aggLGBQQss %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 6, angle = 90, vjust = 0.5),
+        legend.key.size = unit(0.5, 'cm')) +
+  labs(x = "Universe", y = "Estimate of LGBQQ", 
+       title = "2.B: Sexual satisfaction", color= "Statistical Significance") +
+  scale_color_manual(values = MyPalette)
+
+fig2rs <-aggLGBQQrs %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         # if all values are na, then no such interaction combination
+                         TRUE ~ "Not in model")) %>% 
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 6, angle = 90, vjust = 0.5),
+        legend.key.size = unit(0.5, 'cm')) +
+  labs(x = "Universe", y = "Estimate of LGBQQ", 
+       title = "2.C: Satisfaction with singlehood", color= "Statistical Significance") +
+  scale_color_manual(values = MyPalette)
+
+
+fig2ll <-aggLGBQQll %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% 
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 6, angle = 90, vjust = 0.5),
+        legend.key.size = unit(0.5, 'cm')) +
+  labs(x = "Universe", y = "Estimate of LGBQQ", 
+       title = "2.D: Total loneliness score", color= "Statistical Significance") +
+  scale_color_manual(values = MyPalette)
+
+(fig2ls + fig2ss + fig2rs + fig2ll) + plot_layout(guides = 'collect')
+```
+
+```{r, message=F}
+merged.wide[,c(2:5,7,17)] %>% 
+  tbl_summary(
+      statistic = list(all_continuous() ~ "{mean} ({sd})", 
+                       all_categorical() ~ "{n} ({p}%)"),
+      digits = all_continuous() ~ 1,                              
+      type   = all_categorical() ~ "categorical",           
+      label  = list(                                            
+        gender ~ "Gender",
+        orientation ~ "Sexual Orientation",
+        race ~ "Race",
+        age ~ "Age",
+        relationship.end_1 ~ "Length of Singlehood: Baseline",
+        relationship.end_2 ~ "Length of Singlehood: Follow-up"),
+      missing_text = "Missing"                                   
+    )  %>% 
+  modify_caption("Demographic characteristics of participants in merged data set with both baseline and follow-up survey data. Note that Table 2 did not reveal the one missing sexual satisfaction in both baseline and follow-up data. We filtered the missing value for the analysis of sexual satisfaction so the sample size was reduced by 1 in those universes.") %>% 
+  as_kable_extra(booktab = T,
+                 linesep = "") %>% 
+  kable_styling(font_size = 11) %>% 
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r, echo = FALSE}
+choices <- data.frame(
+  data = c(rep("Baseline", 8),rep("Follow-up", 8),rep("Average of both", 8),
+           rep("Repetitive measurement", 8)),
+  sexual_orientation = c(rep("LGBQQ aggregated", 4), 
+                         rep("LGBQQ unaggregated", 4)),
+  control = rep(c(rep("Do not control",2), rep("Control",2)),4),
+  gender = rep(c("No gender","Male vs Female"), 16),
+  universes = 1:32)
+
+choices %>% 
+  kableExtra::kable(booktab = T,
+                    linesep = " ",
+                    col.names = c("Data Used", "Sexual Orientation",
+                                  "Control for Confounders","Gender Interaction", "Universe"),
+                    caption = "Structure of Multiverse Analysis. This table demonstrates the decision branches for each response in our study, resulting in a total of 32 universes or models for one response, and 128 universes or models in total in this study.") %>% 
+  kable_styling(latex_options = c("HOLD_position")) %>% 
+  column_spec(5, bold = T, width = "1.5cm") %>% 
+  column_spec(1:2, width = "4cm") %>% 
+  column_spec(3:4, width = "2.5cm") %>% 
+  collapse_rows(1:4, valign = "top")
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.cap="Estimates, confidence intervals and significance of male. Blue points in life satisfaction and satisfaction of singlehood indicated complete separation. Except for complete separation, male appeared to be all significant and negative in satisfaction with singlehood. The direction of effect for male were consistently negative regardless of its significance in the model, but male had a mixed-direction and potentially weaker effect on total loneliness score."}
+fig3ls <- male %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  labs(x = "Universe", y = "Estimate of male", 
+       title = "3.A: Life satisfaction", color= "Statistical significance") +
+  scale_color_manual(values = MyPalette)
+
+fig3ss <- maless %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  labs(x = "Universe", y = "Estimate of male", 
+       title = "3.B: Sexual satisfaction", color= "Statistical significance") +
+  scale_color_manual(values = MyPalette)
+
+fig3rs <- malers %>%
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model",
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  labs(x = "Universe", y = "Estimate of male",
+       title = "3.C: Satisfaction of singlehood", color= "Statistical significance") +
+  scale_color_manual(values = MyPalette)
+
+
+fig3ll <- malell %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  labs(x = "Universe", y = "Estimate of male", 
+       title = "3.D: Total loneliness score", color= "Statistical significance") +
+  scale_color_manual(values = MyPalette)
+
+(fig3ls + fig3ss + fig3rs + fig3ll) + plot_layout(guides = 'collect')
+```
+
+# perform likelihood ratio tests on all nested models
+
+```{r}
+mylrr <- function(x){
+  p <- list()
+  for (i in 2:4){
+    p <- append(p, anova(x[[1]], x[[i]])$"Pr(>Chisq)"[2])
+  }
+  
+  p <- append(p, anova(x[[2]], x[[4]])$"Pr(>Chisq)"[2])
+  p <- append(p, anova(x[[3]], x[[4]])$"Pr(>Chisq)"[2])
+  
+  for (i in 6:8){
+    p <- append(p, anova(x[[5]], x[[i]])$"Pr(>Chisq)"[2])
+  }
+  
+  p <- append(p, anova(x[[6]], x[[8]])$"Pr(>Chisq)"[2])
+  p <- append(p, anova(x[[7]], x[[8]])$"Pr(>Chisq)"[2])
+  
+  modtest <- c("1 vs 2","1 vs 3","1 vs 4","2 vs 4","3 vs 4",
+               "5 vs 6","5 vs 7","5 vs 8","6 vs 8","7 vs 8")
+  
+  dat <- data.frame(modtest = modtest, pval = unlist(p)) %>% 
+    mutate(decision = ifelse(pval < 0.05, "choose complex model", "choose simple model"))
+  
+  return(dat)
+}
+
+mylrr.mixed <- function(x){
+  p <- list()
+  for (i in 2:4){
+    p <- append(p, lmtest::lrtest(mixed_ll[[1]], mixed_ll[[i]])$"Pr(>Chisq)"[2])
+  }
+  
+  p <- append(p, lmtest::lrtest(mixed_ll[[2]], mixed_ll[[4]])$"Pr(>Chisq)"[2])
+  p <- append(p, lmtest::lrtest(mixed_ll[[3]], mixed_ll[[4]])$"Pr(>Chisq)"[2])
+  
+  for (i in 6:8){
+    p <- append(p, lmtest::lrtest(mixed_ll[[5]], mixed_ll[[i]])$"Pr(>Chisq)"[2])
+  }
+  
+  p <- append(p, lmtest::lrtest(mixed_ll[[6]], mixed_ll[[8]])$"Pr(>Chisq)"[2])
+  p <- append(p, lmtest::lrtest(mixed_ll[[7]], mixed_ll[[8]])$"Pr(>Chisq)"[2])
+  
+  modtest <- c("1 vs 2","1 vs 3","1 vs 4","2 vs 4","3 vs 4",
+               "5 vs 6","5 vs 7","5 vs 8","6 vs 8","7 vs 8")
+  
+  dat <- data.frame(modtest = modtest, pval = unlist(p)) %>% 
+    mutate(decision = ifelse(pval < 0.05, "choose complex model", "choose simple model"))
+  
+  return(dat)
+}
+
+likelihoodtests <- rbind(mylrr(wave1_ls) %>% mutate(dat_res = rep("wave1_ls", 10)),
+                        mylrr(wave1_ss) %>% mutate(dat_res = rep("wave1_ss", 10)),
+                        mylrr(wave1_rs) %>% mutate(dat_res = rep("wave1_rs", 10)),
+                        mylrr(wave1_ll) %>% mutate(dat_res = rep("wave1_ll", 10)),
+                        mylrr(wave2_ls) %>% mutate(dat_res = rep("wave2_ls", 10)),
+                        mylrr(wave2_ss) %>% mutate(dat_res = rep("wave2_ss", 10)),
+                        mylrr(wave2_rs) %>% mutate(dat_res = rep("wave2_rs", 10)),
+                        mylrr(wave2_ll) %>% mutate(dat_res = rep("wave2_ll", 10)),
+                        mylrr(avg_ls) %>% mutate(dat_res = rep("avg_ls", 10)),
+                        mylrr(avg_ss) %>% mutate(dat_res = rep("avg_ss", 10)),
+                        mylrr(avg_rs) %>% mutate(dat_res = rep("avg_rs", 10)),
+                        mylrr(avg_ll) %>% mutate(dat_res = rep("avg_ll", 10)),
+                        mylrr.mixed(mixed_ls) %>% mutate(dat_res = rep("mixed_ls", 10)),
+                        mylrr.mixed(mixed_ss) %>% mutate(dat_res = rep("mixed_ss", 10)),
+                        mylrr.mixed(mixed_rs) %>% mutate(dat_res = rep("mixed_rs", 10)),
+                        mylrr.mixed(mixed_ll) %>% mutate(dat_res = rep("mixed_ll", 10))) 
+
+likelihoodtests %>% 
+  filter(decision == "choose simple model") %>% 
+  kableExtra::kable(booktab = T, linesep = "",
+        col.names = c("Test models", "p-value", 
+                      "Likelihood ratio test decision", "Data and response"),
+        caption = "Summary of failed likelihood ratio tests of nested models. For baseline, follow-up and average data, we only chose simpler CLMs of total loneliness score. On the other hand, we prefered simpler CLMMs in 3 out of 10 likelihood ratio tests for each response.") %>% 
+  kable_styling(latex_options = "HOLD_position") %>% 
+  footnote(c("Wave1 denotes baseline data, wave2 denotes follow-up data, avg denotes average", "data, and mixed denotes multiple measurement CLMMs.", "Abbrevations: ls as life satisfaction, ss as sexual satisfaction, rs as relationship", "satisfaction, ll as total loneliness scores"))
+
+summary(mixed_ls[[3]])
+summary(mixed_ls[[4]])
+lmtest::lrtest(mixed_ls[[3]],mixed_ls[[4]])
+```
+
+# Investigate the confounder, length of singlehood
+
+```{r}
+mylist = list()
+
+for (i in 1:length(wave1_ls)){
+  ifelse("relationship.end_1" %in% rownames(summary(wave1_ls[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave1_ls[[i]])$coefficients["relationship.end_1",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(wave2_ls)){
+  ifelse("relationship.end_2" %in% rownames(summary(wave2_ls[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave2_ls[[i]])$coefficients["relationship.end_2",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(avg_ls)){
+  ifelse("relationship.end" %in% rownames(summary(avg_ls[[i]])$coefficients),
+         mylist <- append(mylist,summary(avg_ls[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(mixed_ls)){
+  ifelse("relationship.end" %in% rownames(summary(mixed_ls[[i]])$coefficients),
+         mylist <- append(mylist,summary(mixed_ls[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+mycoef_ls <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4,
+         sig = case_when(estimate != 0 & is.na(pval) == F & pval < 0.05 ~ "significant",
+                         estimate == 0 ~ "not in model",
+                         TRUE ~ "not significant"))  %>% 
+  select(-c(V1, V2, V3, V4))
+
+mylist = list()
+
+for (i in 1:length(wave1_ss)){
+  ifelse("relationship.end_1" %in% rownames(summary(wave1_ss[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave1_ss[[i]])$coefficients["relationship.end_1",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(wave2_ss)){
+  ifelse("relationship.end_2" %in% rownames(summary(wave2_ss[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave2_ss[[i]])$coefficients["relationship.end_2",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(avg_ss)){
+  ifelse("relationship.end" %in% rownames(summary(avg_ss[[i]])$coefficients),
+         mylist <- append(mylist,summary(avg_ss[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(mixed_ss)){
+  ifelse("relationship.end" %in% rownames(summary(mixed_ss[[i]])$coefficients),
+         mylist <- append(mylist,summary(mixed_ss[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+mycoef_ss <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4,
+         sig = case_when(estimate != 0 & is.na(pval) == F & pval < 0.05 ~ "significant",
+                         estimate == 0 ~ "not in model",
+                         TRUE ~ "not significant"))   %>% 
+  select(-c(V1, V2, V3, V4))
+
+mylist = list()
+
+for (i in 1:length(wave1_rs)){
+  ifelse("relationship.end_1" %in% rownames(summary(wave1_rs[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave1_rs[[i]])$coefficients["relationship.end_1",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(wave2_rs)){
+  ifelse("relationship.end_2" %in% rownames(summary(wave2_rs[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave2_rs[[i]])$coefficients["relationship.end_2",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(avg_rs)){
+  ifelse("relationship.end" %in% rownames(summary(avg_rs[[i]])$coefficients),
+         mylist <- append(mylist,summary(avg_rs[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(mixed_rs)){
+  ifelse("relationship.end" %in% rownames(summary(mixed_rs[[i]])$coefficients),
+         mylist <- append(mylist,summary(mixed_rs[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+mycoef_rs <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+  mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4,
+         sig = case_when(estimate != 0 & is.na(pval) == F & pval < 0.05 ~ "significant",
+                         estimate == 0 ~ "not in model",
+                         TRUE ~ "not significant"))  %>% 
+  select(-c(V1, V2, V3, V4))
+
+mylist = list()
+
+for (i in 1:length(wave1_ll)){
+  ifelse("relationship.end_1" %in% rownames(summary(wave1_ll[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave1_ll[[i]])$coefficients["relationship.end_1",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(wave2_ll)){
+  ifelse("relationship.end_2" %in% rownames(summary(wave2_ll[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave2_ll[[i]])$coefficients["relationship.end_2",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(avg_ll)){
+  ifelse("relationship.end" %in% rownames(summary(avg_ll[[i]])$coefficients),
+         mylist <- append(mylist,summary(avg_ll[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(mixed_ll)){
+  ifelse("relationship.end" %in% rownames(summary(mixed_ll[[i]])$coefficients),
+         mylist <- append(mylist,summary(mixed_ll[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+mycoef_ll <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+  mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4,
+         sig = case_when(estimate != 0 & is.na(pval) == F & pval < 0.05 ~ "significant",
+                         estimate == 0 ~ "not in model",
+                         TRUE ~ "not significant"))  %>% 
+  select(-c(V1, V2, V3, V4))
+
+sum(mycoef_ls$sig == "significant")/sum(mycoef_ls$sig != "not in model")
+sum(mycoef_ss$sig == "significant")/sum(mycoef_ss$sig != "not in model")
+sum(mycoef_rs$sig == "significant")/sum(mycoef_rs$sig != "not in model")
+sum(mycoef_ll$sig == "significant")/sum(mycoef_ll$sig != "not in model")
+```
+
+```{r, fig.height=8, fig.width=8, fig.cap="Baseline length of singlehood. All the histograms in Figure 4 appeared to be bimodal because there were people who had never been in a relationship before, and their length of singlehood was imputed as their age multiplied by 12. Also, there did not appear to be obvious differences in the length of singlehood for people with different genders and sexual orientations."}
+s1 <- survey1 %>% 
+  ggplot(aes(x = relationship.end_1)) +             
+  geom_histogram(aes(y=..density..), color= "white") +
+  labs(x = "Length of Singlehood") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+s2 <- survey1 %>% 
+  ggplot(aes(x = relationship.end_1, fill = orientation)) +             
+  geom_histogram(aes(y=..density..), binwidth=50, color= "white") +
+  facet_wrap(~ orientation) +
+  labs(x = "Length of Singlehood") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+s3 <- survey1 %>% 
+  ggplot(aes(x = relationship.end_1, fill = gender)) +             
+  geom_histogram(aes(y=..density..), binwidth=50, color= "white") +
+  facet_wrap(~ gender) +
+  labs(x = "Length of Singlehood") +
+  theme_minimal() +
+  theme(legend.position = "none")  +
+  scale_fill_brewer(palette="Dark2")
+
+(s1 / (s2 | s3))
+```
+
+# Check proportional odds assumption
+
+Assumption is satisfied if the distances between the red and blue dots for some levels of the variable were similar.
+
+```{r,  echo = TRUE}
+
+plot(pomcheck(LS_1 ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end_1, survey1))
+plot(pomcheck(sexual.satisfaction_1 ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end_1, survey1))
+plot(pomcheck(SWRS1_1 ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end_1, survey1))
+plot(pomcheck(loneliness_1 ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end_1, survey1))
+
+plot(pomcheck(LS_2 ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end_2, merged.wide))
+plot(pomcheck(sexual.satisfaction_2 ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end_2, merged.wide1))
+plot(pomcheck(SWRS1_2 ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end_2, merged.wide))
+plot(pomcheck(loneliness_2 ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end_2, merged.wide))
+
+plot(pomcheck(LS ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end, merged.average))
+plot(pomcheck(sexual.satisfaction ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end, merged.average))
+plot(pomcheck(SWRS1 ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end, merged.average))
+plot(pomcheck(loneliness ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end, merged.average))
+
+plot(pomcheck(LS ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end, merged.long))
+plot(pomcheck(sexual.satisfaction ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end, merged.long))
+plot(pomcheck(SWRS1 ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end, merged.long))
+plot(pomcheck(loneliness ~ orientation.agg + orientation*gender + 
+                age + race + relationship.end, merged.long))
+```
+
+
+
