@@ -1,0 +1,1338 @@
+---
+title: "Sexual minorities experience greater sexual and singlehood satisfaction, but lower life satisfaction and greater loneliness"
+subtitle: "An exploratory study using multiverse analysis"
+author: "Yutong Lu"
+date: "`r Sys.Date()`"
+output: 
+ pdf_document
+header-includes:
+  - \usepackage{titling}
+  - \setlength{\droptitle}{7cm}
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+---
+
+\newpage
+
+# Abstract
+
+Even while joyful singlehood is becoming a more popular idea, Minority Stress Theory suggests that social stigmas around sexual and gender minority groups may result in additional stressors that negatively impact their life and relationship satisfaction. This exploratory analysis aims to explore the variations in life satisfaction, sexual satisfaction, satisfaction with single status, and loneliness levels among single individuals with different sexual orientations and gender identities. The confounders included in this study were age, race and length of singlehood. Data of satisfaction levels and demographic information were collected a baseline survey and a follow-up survey in 2022. The study employed a multiverse analysis approach that documents the potentially different results stemming from a set of potential decision branches. Thus, we built a total of 128 cumulative linked models or cumulative linked mixed models. LGBQQ, some sexual minority subgroups and male were found to be frequently significant in models for all satisfaction measurements. Sexual minorities had higher sexual and singlehood satisfaction levels, but less happy in life and felt lonelier than heterosexual people. Conversely, males appeared to be less satisfied in life, sex life, and singlehood, but felt less lonely than females. We also gained insights into the significance and direction of effect of male-sexual orientation interaction terms.
+
+# Introduction
+
+Despite the media's perpetuation of negative preconceptions about being single, the concept of happy singlehood has acquired popular acceptance as the number of single individuals has increased. It is essential to note, however, that the definition of joyful singlehood can change depending on a person's sexual orientation and gender identity. According to the Minority Stress Theory, sexual minority groups may endure additional stressors as a result of the social stigmas around their sexual orientation, which may lead to poorer levels of life and relationship satisfaction (Meyer, 2003). However, research also indicates that persons with diverse sexual orientations may demonstrate varying degrees of happiness when individuals are not aggregated under a single minority group, and that their happiness may also be different depending on whether they are single or partnered (Mark et al., 2015).
+
+As a result, **the purpose of this study is to conduct an exploratory analysis on how life satisfaction, sexual satisfaction, satisfaction with single status, and loneliness levels of single individuals may vary according to their sexual orientations and genders**. In addition to the association between response, sexual orientation and gender, the potential confounders included were age, race and length of singlehood. We recognized that arbitrary decisions in data manipulation and model selection may greatly influence the results, so our analysis took a multiverse analysis approach, where we explored multiple branches of observation grouping and model construction instead of selecting a single final model. Two surveys were conducted via online platform in 2022 to collect demographic information and satisfaction measures of the participants.
+
+Following the introduction, data summary describes the data collection and manipulation, and provided summary statistics to facilitate the analysis. Method section documents the decision branches of multiverse analysis, in which cumulative link models or cumulative link mixed models were used. Results section reports the findings from multiple branches and interprets the results in the context of the data. Finally, discussion section concludes the findings in this analysis and address limitations as well as future considerations of this study. Appendix at the end displays figures and tables that are relevant to the analysis.
+
+# Method
+
+## Data summary
+
+Data were collected as a part of the online survey for a longitudinal study on autonomous motivations for dating on the platform Prolific. Demographic information collected in the survey including age, race and length of singlehood are the potential confounders in our study. The data collection process consisted of two phases, including a baseline survey conducted in January 2022 and a follow-up survey conducted six months later in July 2022. The main variables of interest were sexual orientation, including heterosexual, lesbian, gay, bisexual, queer, questioning (LGBQQ), and other sexual orientations, as well as gender, including male, female and other genders in the original survey. The main responses of this study were life satisfaction, sexual satisfaction, satisfaction with singlehood and total loneliness score, which was a sum of loneliness measurements using three questions from the UCLA Loneliness Scale (Russel, 1996). Each of the response survey question used different numbers and had different numbers of levels. Life satisfaction was coded from 1 to 4, satisfaction with singlehood also has 4 levels but was coded as 0 to 3, sexual satisfaction had 7 levels 1 to 7. The number of levels of the total loneliness score varied across data sets, because it was a sum of participant's response for the three UCLA loneliness questions, which may vary in different data sets. Other confounders included in this analysis were age, race, and length of singlehood, which were controlled in some of the decision branches.
+
+This analysis only included people who were single by the time of the two surveys. Due to the small sample size in some of the sexual and gender subgroups, we only included male and female as the gender groups. To avoid correlated gender and sexual orientation and small subgroups, we combined gay and lesbian into homosexual, and we excluded people who identified as lesbian male or gay female. Also, participants who chose not to answer their sexual orientation or gender were removed from the study because they failed to provide information on the key variables in this analysis. After applying such exclusion, the baseline sample size was 3875 and the follow-up sample size was 2772. The identifying code number PID was used to match participants in baseline survey to follow-up survey to create the merged data set with a sample size of 2605, which included the single people who completed both surveys. Analysis on the follow-up survey was conducted using the merged data set because no demographic information was collected in the follow-up survey. Two alternatives of merged data set were created, one with the average satisfaction measurement from two surveys and the other with repetitive measurements from both surveys. Table 1 counted the number of participants in each of the sexual orientation and gender subgroups in the merged data set, where the numbers of queer male were relatively small compared to other subgroups. 
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, echo = FALSE)
+
+library(tidyverse)
+library(float)
+library(readxl)
+library(janitor)
+library(gtsummary)
+library(patchwork)
+library(kableExtra)
+library(ordinal)
+library(lmerTest)
+library(pomcheckr)
+```
+
+```{r, message=FALSE, warning=FALSE, cache=TRUE, echo = FALSE}
+
+##################
+#### baseline ####
+##################
+
+# import data
+survey1_raw <- read_excel("merged_data.xlsx", sheet = "merged_data")
+
+# select variables
+survey1 <- survey1_raw %>% 
+  filter(PID != "NA") %>% # one PID is NA, along with other variables
+  filter(orientation != 6) %>% # filter "I choose not to answer"
+  filter(gender != 2 & gender != 3) %>% # filter "I prefer not to disclose" and "other"
+  dplyr::select(PID, age, gender, race, orientation, 
+         relationship_history, relationship_end, 
+         SWRS_1, Sexual.Satisfaction, LS, UCLA_1, UCLA_2, UCLA_3) %>% 
+  mutate(gender = case_when(gender == 0 ~ "Male",
+                            gender == 1 ~ "Female",
+                            TRUE ~ "Other"),
+         race = case_when(race == 0 ~ "Caucasian",
+                          race == 1 ~ "Latino/Hispanic",
+                          race == 2 ~ "Middle Eastern",
+                          race == 3 ~ "African",
+                          race == 4 ~ "Caribbean",
+                          race == 5 ~ "South Asian",
+                          race == 6 ~ "East Asian",
+                         TRUE ~ "Other"),
+         orientation = case_when(orientation == 0 ~ "Heterosexual",
+                                 orientation == 1 ~ "Gay",
+                                 orientation == 2 ~ "Lesbian",
+                                 orientation == 3 ~ "Bisexual",
+                                 orientation == 4 ~ "Queer",
+                                 orientation == 5 ~ "Questioning",
+                                 TRUE ~ "Other"),
+         orientation.agg = case_when(orientation == "Heterosexual" ~ "Heterosexual",
+                                     TRUE ~ "LGBQQ"),
+         # end time for always single people
+         relationship_end = case_when(relationship_end == "NA" ~ "-999", 
+                                      TRUE ~ relationship_end)) %>% 
+  mutate(remove = case_when(gender == "Male" & orientation == "Lesbian" ~ 1,
+                            gender == "Female" & orientation == "Gay" ~ 1,
+                            TRUE ~ 0),
+         orientation = case_when(orientation == "Gay" | orientation == "Lesbian" ~ "Homosexual",
+                                 TRUE ~ orientation)) %>% 
+  filter(remove != 1) %>% 
+  select(-remove)
+
+# loneliness scale
+names(survey1)[names(survey1) == 'UCLA_1'] <- 'UCLA1_1'
+names(survey1)[names(survey1) == 'UCLA_2'] <- 'UCLA2_1'
+names(survey1)[names(survey1) == 'UCLA_3'] <- 'UCLA3_1'
+survey1$UCLA1_1 <- factor(survey1$UCLA1_1, levels = c("1", "2", "3", "4"))
+survey1$UCLA2_1 <- factor(survey1$UCLA2_1, levels = c("1", "2", "3", "4"))
+survey1$UCLA3_1 <- factor(survey1$UCLA3_1, levels = c("1", "2", "3", "4"))
+
+# life satisfaction
+names(survey1)[names(survey1) == 'LS'] <- 'LS_1'
+survey1$LS_1 <- factor(survey1$LS_1, levels = c("1", "2", "3", "4"))
+
+# sexual satisfaction
+names(survey1)[names(survey1) == 'Sexual.Satisfaction'] <- 'sexual.satisfaction_1'
+survey1$sexual.satisfaction_1 <- factor(survey1$sexual.satisfaction_1, 
+                                      levels = c("1", "2", "3", "4", "5", "6", "7"))
+
+# relationship status satisfaction
+names(survey1)[names(survey1) == 'SWRS_1'] <- 'SWRS1_1'
+names(survey1)[names(survey1) == 'relationship_history'] <- 'relationship.history_1'
+names(survey1)[names(survey1) == 'relationship_end'] <- 'relationship.end_1'
+
+survey1$SWRS1_1 <- factor(survey1$SWRS1_1, levels = c("0", "1", "2", "3"))
+survey1$relationship.history_1 <- as.factor(survey1$relationship.history_1)
+survey1$relationship.end_1 <- as.numeric(survey1$relationship.end_1)
+
+# wrong entry in relationship end
+# study done Jan last year 
+# impute new values? highlight the outliers
+survey1 <- survey1 %>% 
+  mutate(relationship.end_1 = 
+           case_when(relationship.end_1 == -999 ~ age*12,
+                     relationship.end_1 < age*12 ~ relationship.end_1, 
+                     # correct for people entered years
+                     relationship.end_1 > 2000 ~ (relationship.end_1-2000)*12,  
+                    TRUE ~ 30)) %>% # change to sample mean after correcting for other people
+      mutate(UCLA1 = as.numeric(UCLA1_1),
+         UCLA2 = as.numeric(UCLA2_1),
+         UCLA3 = as.numeric(UCLA3_1),
+         loneliness_1 = as.factor(UCLA1+UCLA2+UCLA3)) %>% 
+  select(-c(UCLA1, UCLA2,UCLA3))
+
+# Get sample mean of the relationship end time
+# survey1 %>% 
+#   filter(relationship.end_1 != 1200 & relationship.end_1 != age*12) %>% 
+#   summarise(mean=mean(relationship.end_1)) # sample mean of 30.11569
+# 
+# Examine data
+# glimpse(survey1)
+# sum(is.na(survey1))
+# 
+# Check which one is NA
+# which(is.na(survey1$sexual.satisfaction_1)) #no1890 is NA
+
+###################
+#### follow-up ####
+###################
+
+
+# import data
+survey2_raw <- read_excel("Autonomous_Motivations_FU.xlsx", sheet = "Dataset")
+
+# select variables
+survey2 <- survey2_raw[-1,] %>% 
+  clean_names() %>% 
+  dplyr::select(pid, relationship, relationship_history, relationship_end, 
+         swrs_1, sexual_satisfaction, ls, ucla_1, ucla_2, ucla_3, number_people_dated) %>% 
+  dplyr::mutate(relationship_2 = case_when(relationship == "Yes" ~ "1",
+                                           # relationship status in the first survey are all 0
+                                           relationship == "No" ~ "0"), 
+         relationship.end_2 = case_when(relationship == "Yes" & is.na(relationship_end) ~ "0", 
+                                        # if NA, this person could currently be in a relationship
+                                        relationship == "No" & is.na(relationship_end) ~ "-999",
+                                        TRUE ~ relationship_end),
+         relationship.history_2 = case_when(relationship_history == "Yes" ~ "1",
+                                          relationship_history == "No" ~ "0",
+                                          # if NA, then this person is currently in a relationship
+                                          TRUE ~ "1"), 
+         LS_2 = case_when(ls == "Very Dissatisfied  1" ~ "1",
+                        ls == "Very Satisfied  4" ~ "4",
+                        TRUE ~ ls),
+         # How satisfied are you with your current relationship status? 
+         # Those who are in a relationship answer this question too, not exclusive to single status.
+         SWRS1_2 = case_when(swrs_1 == "Not At All  0" ~ "0",
+                            swrs_1 == "A Little  1" ~ "1",
+                            swrs_1 == "To Quite Some Extent  2" ~ "2",
+                            swrs_1 == "To A Great Extent  3" ~ "3"),
+         sexual.satisfaction_2 = case_when(
+           sexual_satisfaction == "Very Dissatisfied" ~ "1",
+           sexual_satisfaction == "Dissatisfied" ~ "2",
+           sexual_satisfaction == "Somewhat Dissatisfied" ~ "3",
+           sexual_satisfaction == "Neither Satisfied Nor Dissatisfied" ~ "4",
+           sexual_satisfaction == "Somewhat Satisfied" ~ "5",
+           sexual_satisfaction == "Satisfied" ~ "6",
+           sexual_satisfaction == "Very Satisfied" ~ "7"),
+         UCLA1_2 = case_when(ucla_1 == "Hardly Ever  1" ~ "1",
+                            ucla_1 == "Some of the Time  2" ~ "2",
+                            ucla_1 == "Often  3" ~ "3",
+                            ucla_1 == "Click to write Scale Point 4" ~ "4"),
+         UCLA2_2 = case_when(ucla_2 == "Hardly Ever  1" ~ "1",
+                            ucla_2 == "Some of the Time  2" ~ "2",
+                            ucla_2 == "Often  3" ~ "3",
+                            ucla_2 == "Click to write Scale Point 4" ~ "4"),
+         UCLA3_2 = case_when(ucla_3 == "Hardly Ever  1" ~ "1",
+                            ucla_3 == "Some of the Time  2" ~ "2",
+                            ucla_3 == "Often  3" ~ "3",
+                            ucla_3 == "Click to write Scale Point 4" ~ "4")) %>% 
+  select(-c(relationship, relationship_history, relationship_end,
+            swrs_1, ls, sexual_satisfaction, ucla_1, ucla_2, ucla_3)) 
+
+names(survey2)[names(survey2) == 'pid'] <- 'PID'
+
+# loneliness scale
+survey2$UCLA1_2 <- factor(survey2$UCLA1_2, levels = c("1", "2", "3", "4"))
+survey2$UCLA2_2 <- factor(survey2$UCLA2_2, levels = c("1", "2", "3", "4"))
+survey2$UCLA3_2 <- factor(survey2$UCLA3_2, levels = c("1", "2", "3", "4"))
+
+# life satisfaction
+survey2$LS_2 <- factor(survey2$LS_2, levels = c("1", "2", "3", "4"))
+
+# sexual satisfaction
+survey2$sexual.satisfaction_2 <- factor(survey2$sexual.satisfaction_2, 
+                                      levels = c("1", "2", "3", "4", "5", "6", "7"))
+
+# relationship status satisfaction
+names(survey2)[names(survey2) == 'number_people_dated'] <- 'number.people.dated'
+survey2$number.people.dated <- as.numeric(survey2$number.people.dated)
+
+survey2$SWRS1_2 <- factor(survey2$SWRS1_2, levels = c("0", "1", "2", "3"))
+survey2$relationship.history_2 <- as.factor(survey2$relationship.history_2)
+survey2$relationship.end_2 <- as.numeric(survey2$relationship.end_2)
+survey2$relationship_2 <- as.logical(as.numeric(survey2$relationship_2)) 
+# made it logical for plotting purposes
+
+survey2 <- survey2 %>% 
+  mutate(UCLA1 = as.numeric(UCLA1_2),
+         UCLA2 = as.numeric(UCLA2_2),
+         UCLA3 = as.numeric(UCLA3_2),
+         loneliness_2 = as.factor(UCLA1+UCLA2+UCLA3)) %>% 
+  select(-c(UCLA1, UCLA2,UCLA3))
+
+# glimpse(survey2)
+# sum(is.na(survey2))
+# 
+# which(is.na(survey2$sexual.satisfaction_2)) #no1873 NA
+
+survey2.allsingle <- survey2 %>% 
+  filter(relationship_2 == FALSE) %>% 
+  select(-relationship_2)
+
+# some people dated during the last 6 months but indicated they have never been in a relationship
+
+
+###############
+#### merge ####
+###############
+
+
+merged.wide <- merge(survey1,survey2.allsingle,by="PID") %>% 
+  mutate(relationship.end_2 = case_when(relationship.end_2 == -999 ~ age*12 + 6,
+                                        TRUE ~ relationship.end_2)) %>% 
+  mutate(remove = case_when(gender == "Male" & orientation == "Lesbian" ~ 1,
+                            gender == "Female" & orientation == "Gay" ~ 1,
+                            TRUE ~ 0),
+         orientation = case_when(orientation == "Gay" | orientation == "Lesbian" ~ "Homosexual",
+                                 TRUE ~ orientation)) %>% 
+  filter(remove != 1) %>% 
+  select(-remove)
+
+merged.long <- merged.wide %>% 
+  pivot_longer(cols = -c(PID,age,gender,orientation,race,orientation.agg,
+                         number.people.dated), 
+              names_to = c(".value", "surveyNo"),
+              names_sep = "_")
+
+merged.average <- merged.wide %>% 
+   mutate(SWRS1 = as.factor((as.numeric(SWRS1_1) + as.numeric(SWRS1_2))/2),
+          sexual.satisfaction = case_when(
+            is.na(sexual.satisfaction_1) == F & is.na(sexual.satisfaction_2) == F ~ as.factor((as.numeric(sexual.satisfaction_1) + as.numeric(sexual.satisfaction_2))/2),
+            is.na(sexual.satisfaction_1) ~ sexual.satisfaction_2,
+            is.na(sexual.satisfaction_2) ~ sexual.satisfaction_1),
+          LS = as.factor((as.numeric(LS_1)+ as.numeric(LS_2))/2),
+          loneliness = as.factor((as.numeric(loneliness_1)+ as.numeric(loneliness_2))/2),
+          relationship.end = (relationship.end_1 + relationship.end_2)/2) %>%
+  select(PID, age, gender, orientation, orientation.agg, SWRS1, sexual.satisfaction, 
+         LS, loneliness, relationship.end, race)
+
+survey1$orientation <- factor(survey1$orientation, 
+                               levels = c("Heterosexual","Homosexual","Bisexual","Queer","Questioning","Other"))
+merged.wide$orientation <- factor(merged.wide$orientation, 
+                               levels = c("Heterosexual","Homosexual","Bisexual","Queer","Questioning","Other"))
+merged.average$orientation <- factor(merged.average$orientation, 
+                               levels = c("Heterosexual","Homosexual","Bisexual","Queer","Questioning","Other"))
+merged.long$orientation <- factor(merged.long$orientation, 
+                               levels = c("Heterosexual","Homosexual","Bisexual","Queer","Questioning","Other"))
+```
+
+```{r}
+merged.wide %>% 
+  group_by(orientation, gender) %>% 
+  summarise(n = n()) %>% 
+  kable(booktab = T,
+        linesep = "",
+        col.names = c("Sexual orientation", "Gender", "Count"),
+        caption = "Merged data set sexual orientation and gender subgroups.") %>% 
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+Table 2 in Appendix provided a summary of the demographic information for participants in the merged data set with both baseline and follow-up survey data, including the mean and standard deviation for numeric variables, or count for categorical variables. Among the participants who completed both surveys, the mean age was 24.7 and 58\% of them were Caucasian. There was a roughly balanced gender distribution, but 72\% of participants identified as heterosexual. The mean length of singlehood in months in follow-up survey appeared to be more than twice of that in the baseline, suggesting that those people who remained single during follow-up survey had been single for a longer period of time on average. 
+
+## Multiverse Analysis
+
+Decisions made by researchers in empirical studies could be arbitrary and could potentially lead to drastically different results. To enhance research transparency, the method of multiverse analysis involves analyzing all data sets created through different reasonable options, rather than following one pre-determined path of analysis (Steegen et al., 2016). By building multiple universes with options for different data manipulation and model building, a multiverse analysis provides insights into how much conclusions may change due to data processing and analysis decisions, and which choices are the most essential to the robustness or fragility of results (Steegen et al., 2016). 
+
+In this study, we conducted multiverse analysis on four responses, including life satisfaction, sexual satisfaction, satisfaction of singlehood, and total loneliness score. We first decided the data set used in the analysis, including baseline survey, follow-up survey, the average response value of baseline and follow-up surveys, and both baseline and follow-up surveys with two observations from each participant. Then we defined sexual orientation groups in two ways, one with binary grouping of heterosexual and LGBQQ aggregated and the other one with heterosexual, lesbian, gay, binary, queer, and questioning individuals separated. Consequentially, we chose whether to control for the covariates age, race and length of singlehood and whether to include gender and  gender-sexual orientation interaction. Each response had $4\times 2 \times 2 \times 2=32$ universes and we had a total of $32\times4=128$ universes in this multiverse analysis. Table 4 in Appendix lists the decisions we made in all 32 universes for one response.
+
+## Cumulative link models for ordinal regression
+
+The original questions used Likert scales to gauge the individuals' levels of life satisfaction, sexual pleasure, satisfaction with singlehood, and loneliness, which were the four response variables in our study. For these variables, larger numbers denoted a greater degree of agreement with the issue, while smaller numbers indicated a lesser degree of agreement. To account for the ordered nature of the coded numbers representing a finite set factors that were ranked from least to greatest extent, we utilised ordinal regression with cumulative link models (CLM). The dependent variable in CLM is a function of the cumulative probability of the response being smaller or equal to a level. The independent variables in CLM for this study included a combination of aggregated or unaggregated sexual orientations, gender, age, race and length of singlehood, depending on different universes. 
+
+For CLM, we assumed proportional odds, linearity of the predictor and the log odds of the response, and independent observations. The proportional odds assumption states that the effect of the predictor on the response are the same across all levels of the response variable (McNulty, 2021). Diagnostic graphs in Figure 5 Appendix revealed that there may be some violations of proportional odds assumption. However, the results from CLM with violated proportional odds assumption may still be robust in the sense that, although the magnitude of the estimates may not be reliable, the significance of predictors and direction of effects using cumulative link models should remain useful (Harrell, 2020).
+
+### Cumulative link mixed models
+
+For the decision branches with both baseline and follow-up data with repetitive measurements, we used cumulative link mixed models (CLMM) to accommodate the fact that we had two responses from the same participant (Christensen, 2019). In the merged data set, those participant who did not drop out of the study had two responses to the satisfaction measurements, which were not independent and thus violated the independent observation assumption of the cumulative link model. Also, we would like to account for the individual differences in their subjective assessment of satisfaction level. As a result, we used a cumulative link mixed model that included both fixed and random effects, where the fixed effects were the predictors we wanted to estimate, such as sexual orientation, gender and other confounders, and the random effects were the values that we wanted to take into consideration but did not want to estimate, such as subjects labelled by their PID. 
+
+For example, in Universe 25 for the response of life satisfaction $Y_i$, we specified the cumulative link mixed model as $$logit(P(Y_i<j))=\theta_j-\beta_1x_i-b_1z_i, \ \ i=1,...,3880, \ \ j=1,...,3$$ where we used the logit link function $$logit(P(Y_i<j))=\log \frac{P(Y_i\leq j)}{1-P(Y_i\leq j)}.$$ The outcome $Y_i$ represented the ordinal life satisfaction for the $i$-th observation in our study, which took a value of $j$ if the category of $i$-th observation is $j$, for $j = 1,2,3$. $\theta_j$ was the intercept, $\beta_1x_i$ were the coefficient and indicator for being in the LGBQQ community, and $b_i$ and $z_i$ represented coefficient and value of the random effect for participant $i$. Thus, Universe 25 modeled the cumulative probability of the $i$-th participant chose a life satisfaction level of $j$ or below, with sexual orientation fixed effect and individual-level random effect. We assumed the subject effects to be random and followed an identical and independent normal distribution, $N(0, \sigma^2_b)$. The other models in our analysis followed a similar idea as this model, but some models did not include random effect (CLMs), had different number of level $J$, different parameters of interest, and different sample size $n$ across data sets. 
+
+After fitting all 128 models, we conducted likelihood ratio tests for cumulative link models and cumulative link mixed models that were nested in predictors and examined the models that we failed or did not fail to reject the null hypothesis. The null hypothesis of the likelihood ratio test was that the simpler model fitted the data as well as the complex model. The alternative hypothesis of the test was that the more complex model was a better fit for the data than the simpler model.
+
+# Results
+
+We first examined the proportional odds assumption using diagnostic graphs, and in some cases the assumptions were reasonably met but some showed potential violations, mostly in the variables with multiple levels such as race and unaggregated orientations as shown in Appendix Figure 5 (UCLA: Statistical Consulting Group, n.d.). As a result, this could be a potential limitation and cause the estimate magnitude to be unreliable, but the significance of predictors and the direction of the estimates should remain useful (Harrell, 2020). Then we proceeded to fit CLMs and CLMMs according to our decision branches in Table 1.
+
+```{r, echo = FALSE}
+mymodels1 <- function(df, respIdx){
+  fits <- list()
+  fits$model1 <- clm(unlist(df[, respIdx]) ~ orientation.agg, data = df)
+  fits$model2 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender, data = df)
+  fits$model3 <- clm(unlist(df[, respIdx]) ~ orientation.agg + age + race + 
+                       relationship.end_1, data = df)
+  fits$model4 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender + age + race + 
+                       relationship.end_1, data = df)
+  
+  fits$model5 <- clm(unlist(df[, respIdx]) ~ orientation, data = df)
+  fits$model6 <- clm(unlist(df[, respIdx]) ~ orientation*gender, data = df)
+  fits$model7 <- clm(unlist(df[, respIdx]) ~ orientation + age + race + 
+                       relationship.end_1, data = df)
+  fits$model8 <- clm(unlist(df[, respIdx]) ~ orientation*gender + age + race + 
+                       relationship.end_1, data = df)
+  return(fits)
+}
+
+mymodels2 <- function(df, respIdx){
+  fits <- list()
+  fits$model1 <- clm(unlist(df[, respIdx]) ~ orientation.agg, data = df)
+  fits$model2 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender, data = df)
+  fits$model3 <- clm(unlist(df[, respIdx]) ~ orientation.agg + age + race + 
+                       relationship.end_2, data = df)
+  fits$model4 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender + age + 
+                       race + relationship.end_2, data = df)
+  
+  fits$model5 <- clm(unlist(df[, respIdx]) ~ orientation, data = df)
+  fits$model6 <- clm(unlist(df[, respIdx]) ~ orientation*gender, data = df)
+  fits$model7 <- clm(unlist(df[, respIdx]) ~ orientation + age + race + 
+                       relationship.end_2, data = df)
+  fits$model8 <- clm(unlist(df[, respIdx]) ~ orientation*gender + age + race + 
+                       relationship.end_2, data = df)
+  return(fits)
+}
+
+mymodelsavg <- function(df, respIdx){
+  fits <- list()
+  fits$model1 <- clm(unlist(df[, respIdx]) ~ orientation.agg, data = df)
+  fits$model2 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender, data = df)
+  fits$model3 <- clm(unlist(df[, respIdx]) ~ orientation.agg + age + race + 
+                       relationship.end, data = df)
+  fits$model4 <- clm(unlist(df[, respIdx]) ~ orientation.agg*gender + age + 
+                       race + relationship.end, data = df)
+  
+  fits$model5 <- clm(unlist(df[, respIdx]) ~ orientation, data = df)
+  fits$model6 <- clm(unlist(df[, respIdx]) ~ orientation*gender, data = df)
+  fits$model7 <- clm(unlist(df[, respIdx]) ~ orientation + age + race + 
+                       relationship.end, data = df)
+  fits$model8 <- clm(unlist(df[, respIdx]) ~ orientation*gender + age + race + 
+                       relationship.end, data = df)
+  return(fits)
+}
+
+mymodelsmixed <- function(df, respIdx){
+  fits <- list()
+  fits$model1 <- clmm(unlist(df[, respIdx]) ~ orientation.agg + 
+                        (1 | PID), data = df)
+  fits$model2 <- clmm(unlist(df[, respIdx]) ~ orientation.agg*gender+ 
+                        (1 | PID), data = df)
+  fits$model3 <- clmm(unlist(df[, respIdx]) ~ orientation.agg + age + race + 
+                        relationship.end+ (1 | PID), data = df)
+  fits$model4 <- clmm(unlist(df[, respIdx]) ~ orientation.agg*gender + age + 
+                        race + relationship.end + (1 | PID), data = df)
+  
+  fits$model5 <- clmm(unlist(df[, respIdx]) ~ orientation + 
+                        (1 | PID), data = df)
+  fits$model6 <- clmm(unlist(df[, respIdx]) ~ orientation*gender + 
+                        (1 | PID), data = df)
+  fits$model7 <- clmm(unlist(df[, respIdx]) ~ orientation + age + race + 
+                        relationship.end + (1 | PID), data = df)
+  fits$model8 <- clmm(unlist(df[, respIdx]) ~ orientation*gender + age + 
+                        race + relationship.end + (1 | PID), data = df)
+  return(fits)
+}
+```
+
+```{r wave1, cache=TRUE, warning=FALSE, echo = FALSE}
+# WAVE 1
+wave1_ls <- mymodels1(survey1, 10)
+wave1_rs <- mymodels1(survey1, 8)
+wave1_ll <- mymodels1(survey1, 15)
+
+survey11 <- survey1 %>% 
+  filter(is.na(sexual.satisfaction_1)==FALSE)
+
+wave1_ss <- mymodels1(survey11, 9)
+```
+
+
+```{r wave2, cache=TRUE, warning=FALSE, echo = FALSE}
+# WAVE 2
+wave2_ls <- mymodels2(merged.wide, 19)
+wave2_rs <- mymodels2(merged.wide, 20)
+wave2_ll <- mymodels2(merged.wide, 22)
+
+merged.wide1 <- merged.wide %>% 
+  filter(is.na(sexual.satisfaction_1)==FALSE)
+
+wave2_ss <- mymodels2(merged.wide1, 21)
+```
+
+
+```{r bothwaves, cache=TRUE, warning=FALSE, echo=FALSE}
+# BOTH WAVES
+
+## AVERAGE
+avg_ls <- mymodelsavg(merged.average, 8)
+avg_rs <- mymodelsavg(merged.average, 6)
+avg_ll <- mymodelsavg(merged.average, 9)
+avg_ss <- mymodelsavg(merged.average, 7)
+
+
+## RANDOM EFFECTS
+
+mixed_ls <- mymodelsmixed(merged.long, 13)
+mixed_rs <- mymodelsmixed(merged.long, 11)
+mixed_ll <- mymodelsmixed(merged.long, 17)
+
+merged.long1 <- merged.long %>% 
+  filter(is.na(sexual.satisfaction)==F)
+
+mixed_ss <- mymodelsmixed(merged.long1, 12)
+```
+
+
+```{r, echo=FALSE}
+# functions to extra coefficients from model summaries
+
+findmycoef_ls <- function(outcome){
+  mylist = list()
+  
+  for (i in 1:length(wave1_ls)){
+    ifelse(outcome %in% rownames(summary(wave1_ls[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave1_ls[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(wave2_ls)){
+    ifelse(outcome %in% rownames(summary(wave2_ls[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave2_ls[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(avg_ls)){
+    ifelse(outcome %in% rownames(summary(avg_ls[[i]])$coefficients),
+           mylist <- append(mylist,summary(avg_ls[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(mixed_ls)){
+    ifelse(outcome %in% rownames(summary(mixed_ls[[i]])$coefficients),
+           mylist <- append(mylist,summary(mixed_ls[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  mycoef <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4) %>% 
+    select(-c(V1, V2, V3, V4))
+  return(mycoef)
+}
+
+findmycoef_ss <- function(outcome){
+  mylist = list()
+  
+  for (i in 1:length(wave1_ss)){
+    ifelse(outcome %in% rownames(summary(wave1_ss[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave1_ss[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(wave2_ss)){
+    ifelse(outcome %in% rownames(summary(wave2_ss[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave2_ss[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(avg_ss)){
+    ifelse(outcome %in% rownames(summary(avg_ss[[i]])$coefficients),
+           mylist <- append(mylist,summary(avg_ss[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(mixed_ss)){
+    ifelse(outcome %in% rownames(summary(mixed_ss[[i]])$coefficients),
+           mylist <- append(mylist,summary(mixed_ss[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  mycoef <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4) %>% 
+    select(-c(V1, V2, V3, V4))
+  return(mycoef)
+}
+
+findmycoef_rs <- function(outcome){
+  mylist = list()
+  
+  for (i in 1:length(wave1_rs)){
+    ifelse(outcome %in% rownames(summary(wave1_rs[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave1_rs[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(wave2_rs)){
+    ifelse(outcome %in% rownames(summary(wave2_rs[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave2_rs[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(avg_rs)){
+    ifelse(outcome %in% rownames(summary(avg_rs[[i]])$coefficients),
+           mylist <- append(mylist,summary(avg_rs[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(mixed_rs)){
+    ifelse(outcome %in% rownames(summary(mixed_rs[[i]])$coefficients),
+           mylist <- append(mylist,summary(mixed_rs[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  mycoef <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4) %>% 
+    select(-c(V1, V2, V3, V4))
+  return(mycoef)
+}
+
+findmycoef_ll <- function(outcome){
+  mylist = list()
+  
+  for (i in 1:length(wave1_ll)){
+    ifelse(outcome %in% rownames(summary(wave1_ll[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave1_ll[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(wave2_ll)){
+    ifelse(outcome %in% rownames(summary(wave2_ll[[i]])$coefficients),
+           mylist <- append(mylist,summary(wave2_ll[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(avg_ll)){
+    ifelse(outcome %in% rownames(summary(avg_ll[[i]])$coefficients),
+           mylist <- append(mylist,summary(avg_ll[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  for (i in 1:length(mixed_ll)){
+    ifelse(outcome %in% rownames(summary(mixed_ll[[i]])$coefficients),
+           mylist <- append(mylist,summary(mixed_ll[[i]])$coefficients[outcome,]),
+           mylist <- append(mylist, rep(0,4)))
+  }
+  
+  mycoef <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4) %>% 
+    select(-c(V1, V2, V3, V4))
+  return(mycoef)
+}
+```
+
+```{r, echo=FALSE}
+# Get all coefficients from 128 universes
+
+# Life satisfaction Models
+
+aggLGBQQ <- findmycoef_ls("orientation.aggLGBQQ")
+aggLGBQQ_Male <- findmycoef_ls("orientation.aggLGBQQ:genderMale")
+male <-  findmycoef_ls("genderMale")
+oriHomo <- findmycoef_ls("orientationHomosexual")
+oriBi <- findmycoef_ls("orientationBisexual")
+oriOther <- findmycoef_ls("orientationOther")
+oriQueer <- findmycoef_ls("orientationQueer")
+oriQuestion <- findmycoef_ls("orientationQuestioning")
+HomoMale <- findmycoef_ls("orientationHomosexual:genderMale")
+BiMale <- findmycoef_ls("orientationBisexual:genderMale")
+OtherMale <- findmycoef_ls("orientationOther:genderMale")
+QueerMale <- findmycoef_ls("orientationQueer:genderMale")
+QuestionMale <- findmycoef_ls("orientationQuestioning:genderMale")
+
+# Sexual satisfaction Models
+
+aggLGBQQss <- findmycoef_ss("orientation.aggLGBQQ")
+aggLGBQQ_Maless <- findmycoef_ss("orientation.aggLGBQQ:genderMale")
+maless <-  findmycoef_ss("genderMale")
+oriHomoss <- findmycoef_ss("orientationHomosexual")
+oriBiss <- findmycoef_ss("orientationBisexual")
+oriOtherss <- findmycoef_ss("orientationOther")
+oriQueerss <- findmycoef_ss("orientationQueer")
+oriQuestionss <- findmycoef_ss("orientationQuestioning")
+HomoMaless <- findmycoef_ss("orientationHomosexual:genderMale")
+BiMaless <- findmycoef_ss("orientationBisexual:genderMale")
+OtherMaless <- findmycoef_ss("orientationOther:genderMale")
+QueerMaless <- findmycoef_ss("orientationQueer:genderMale")
+QuestionMaless <- findmycoef_ss("orientationQuestioning:genderMale")
+
+# Relationship satisfaction
+
+aggLGBQQrs <- findmycoef_rs("orientation.aggLGBQQ")
+aggLGBQQ_Malers <- findmycoef_rs("orientation.aggLGBQQ:genderMale")
+malers <-  findmycoef_rs("genderMale")
+oriHomors <- findmycoef_rs("orientationHomosexual")
+oriBirs <- findmycoef_rs("orientationBisexual")
+oriOtherrs <- findmycoef_rs("orientationOther")
+oriQueerrs <- findmycoef_rs("orientationQueer")
+oriQuestionrs <- findmycoef_rs("orientationQuestioning")
+HomoMalers <- findmycoef_rs("orientationHomosexual:genderMale")
+BiMalers <- findmycoef_rs("orientationBisexual:genderMale")
+OtherMalers <- findmycoef_rs("orientationOther:genderMale")
+QueerMalers <- findmycoef_rs("orientationQueer:genderMale")
+QuestionMalers <- findmycoef_rs("orientationQuestioning:genderMale")
+
+# total loneliness score
+
+aggLGBQQll <- findmycoef_ll("orientation.aggLGBQQ")
+aggLGBQQ_Malell <- findmycoef_ll("orientation.aggLGBQQ:genderMale")
+malell <-  findmycoef_ll("genderMale")
+oriHomoll <- findmycoef_ll("orientationHomosexual")
+oriBill <- findmycoef_ll("orientationBisexual")
+oriOtherll <- findmycoef_ll("orientationOther")
+oriQueerll <- findmycoef_ll("orientationQueer")
+oriQuestionll <- findmycoef_ll("orientationQuestioning")
+HomoMalell <- findmycoef_ll("orientationHomosexual:genderMale")
+BiMalell <- findmycoef_ll("orientationBisexual:genderMale")
+OtherMalell <- findmycoef_ll("orientationOther:genderMale")
+QueerMalell <- findmycoef_ll("orientationQueer:genderMale")
+QuestionMalell <- findmycoef_ll("orientationQuestioning:genderMale")
+```
+
+Based on the results from all 128 universes or models for life satisfaction, sexual satisfaction, satisfaction of singlehood, and total loneliness score, different variables were significant predictors for different responses. We define the significance frequency of a variable as the proportion of p-value $< 0.05$ in all models containing this predictor for a specific response. The baseline or reference level for aggregated or unaggregated LGBQQ was heterosexual, and the baseline level for gender was female. Figure 1 demonstrates the predictors that had a p-value $< 0.05$ in at least one model for four responses, respectively. The variable LGBQQ in the branch of aggregated sexual minorities had a p-value $< 0.05$ in $(57/64)=89\%$ of models containing this variable across all four responses, which was also shown in Figure 2. However, when we further divided LGBQQ into individual sexual minority subgroups, different subgroups was more frequently significant across four responses. Questioning, bisexual and other were significant in all responses, but homosexual and queer were not sigificant in any models for singlehood satisfaction and total loneliness, respectively. In sexual and singlehood satisfaction models, questioning and other were significant in almost all models containing unaggregated LGBQQ, but other sexual orientation was only significant in about 25\% of total loneliness models, as shown in Figure 1.D. On the other hand, the male gender was significant in all life, sexual and singlehood satisfaction models, but only 37.5\% of total loneliness models containing gender had significant male predictor, as shown in Figure 1.D. A closer examination of male effects in Appendix Figure 3 revealed that the proportion of significant predictor male was the lowest and the magnitude of estimates were closer to zero in total loneliness score models, meaning that the effect of gender was weaker on loneliness. This weaker effect on total loneliness score may be true for all variables, where no predictor was significant in all total loneliness models containing this predictor, as shown in Figure 1.D. Male-sexual orientation interaction terms were also significant in some of the sexual and singlehood satisfaction, and total loneliness score models, but were significant in a lower proportion of models.
+
+```{r, fig.width=10, fig.height=7.8, fig.cap = "Significance frequency of variables in the models for four responses. Only the variables that had a p-value < 0.05 in at least one model were included in this figure, and their direction of effects were color-coded differently in models where they were significant (filling) or in all models (outline). Note that the variable heterosexual was the reference level and thus not showing in the models.", echo=FALSE}
+MyPalette2 <- c("all positive" = "#CA35A6", "all negative" = "#A6CA35", 
+               "either positive or negative" = "#35A6CA")
+
+ls <- cbind(rep(c("LGBQQ", "LGBQQ:Male", "Male", "Homosexual", "Bisexual", 
+                  "Other", "Queer", "Questioning", "Homosexual:Male", 
+                  "Bisexual:Male", "Other:Male", "Queer:Male", 
+                  "Questioning:Male"), each = 32), 
+      rbind(aggLGBQQ, aggLGBQQ_Male, male, oriHomo, oriBi,  oriOther, 
+            oriQueer, oriQuestion, HomoMale, BiMale, OtherMale, QueerMale, 
+            QuestionMale))
+
+colnames(ls)[1] <- "variable"
+
+pval1 <- ls %>% 
+  group_by(variable) %>% 
+  summarise(inmod = sum(estimate != 0 | is.na(estimate)),
+            sig = sum(estimate != 0 & is.na(pval) == F & pval < 0.05),
+            effsig = case_when(
+              sum(estimate > 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all positive",
+              sum(estimate < 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all negative",
+              TRUE ~ "either positive or negative"),
+            eff = case_when(sum(estimate > 0) == inmod ~ "all positive",
+                               sum(estimate < 0) == inmod ~ "all negative",
+                               TRUE ~ "either positive or negative"),
+            freq = sig/inmod) %>% 
+  filter(sig != 0) %>% 
+  ggplot(aes(variable, fill = effsig)) +
+  geom_bar(aes(y=freq, color = eff), stat="identity", width = 0.6, size = 2) +
+  labs(x = "Variable",
+       y = "Significance frequency",
+       title = "1.A: Life satisfaction",
+       color = "Direction of all effect",
+       fill = "Direction of significant effect") + 
+  theme_minimal()  +
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 10),
+        plot.title = element_text(size = 11)) +
+  coord_flip() +
+  scale_fill_manual(values = MyPalette2)+
+  scale_color_manual(values = MyPalette2)
+
+ss <- cbind(rep(c("LGBQQ", "LGBQQ:Male", "Male", "Homosexual", "Bisexual", 
+                  "Other", "Queer", "Questioning", "Homosexual:Male", 
+                  "Bisexual:Male", "Other:Male", "Queer:Male", 
+                  "Questioning:Male"), each = 32), 
+      rbind(aggLGBQQss, aggLGBQQ_Maless, maless, oriHomoss, oriBiss, 
+            oriOtherss, oriQueerss, oriQuestionss, HomoMaless, 
+            BiMaless, OtherMaless, QueerMaless, QuestionMaless))
+
+colnames(ss)[1] <- "variable"
+
+pval2 <- ss %>% 
+  group_by(variable) %>% 
+  summarise(inmod = sum(estimate != 0 | is.na(estimate)),
+            sig = sum(estimate != 0 & is.na(pval) == F & pval < 0.05),
+            effsig = case_when(
+              sum(estimate > 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all positive",
+              sum(estimate < 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all negative",
+              TRUE ~ "either positive or negative"),
+            eff = case_when(sum(estimate > 0) == inmod ~ "all positive",
+                               sum(estimate < 0) == inmod ~ "all negative",
+                               TRUE ~ "either positive or negative"),
+            freq = sig/inmod) %>% 
+  filter(sig != 0) %>% 
+  ggplot(aes(variable, fill = effsig)) +
+  geom_bar(aes(y=freq, color = eff), stat="identity", width = 0.6, size = 2) +
+  labs(x = "Variable",
+       y = "Significance frequency",
+       title = "1.B: Sexual satisfaction",
+       color = "Direction of all effect",
+       fill = "Direction of significant effect") + 
+  theme_minimal() +
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 10),
+        plot.title = element_text(size = 11)) +
+  coord_flip() +
+  scale_fill_manual(values = MyPalette2)+
+  scale_color_manual(values = MyPalette2)
+
+rs <- cbind(rep(c("LGBQQ", "LGBQQ:Male", "Male", "Homosexual", "Bisexual", 
+                  "Other", "Queer", "Questioning", "Homosexual:Male", 
+                  "Bisexual:Male", "Other:Male", "Queer:Male", 
+                  "Questioning:Male"), each = 32),  
+      rbind(aggLGBQQrs, aggLGBQQ_Malers, malers, oriHomors, oriBirs, 
+            oriOtherrs, oriQueerrs, oriQuestionrs, HomoMalers, 
+            BiMalers, OtherMalers, QueerMalers, QuestionMalers))
+
+colnames(rs)[1] <- "variable"
+
+pval3 <- rs %>% 
+  group_by(variable) %>% 
+  summarise(inmod = sum(estimate != 0 | is.na(estimate)),
+            sig = sum(estimate != 0 & is.na(pval) == F &  pval < 0.05),
+            effsig = case_when(
+              sum(estimate > 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all positive",
+              sum(estimate < 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all negative",
+              TRUE ~ "either positive or negative"),
+            eff = case_when(sum(estimate > 0) == inmod ~ "all positive",
+                               sum(estimate < 0) == inmod ~ "all negative",
+                               TRUE ~ "either positive or negative"),
+            freq = sig/inmod) %>% 
+  filter(sig != 0) %>% 
+  ggplot(aes(variable, fill = effsig)) +
+  geom_bar(aes(y=freq, color = eff), stat="identity",width = 0.6, size = 2) +
+  labs(x = "Variable",
+       y = "Significance frequency",
+       title = "1.C: Satisfaction of singlehood",
+       color = "Direction of all effect",
+       fill = "Direction of significant effect") + 
+  theme_minimal()+
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 10),
+        plot.title = element_text(size = 11)) +
+  coord_flip() +
+  scale_fill_manual(values = MyPalette2) +
+  scale_color_manual(values = MyPalette2)
+
+ll <- cbind(rep(c("LGBQQ", "LGBQQ:Male", "Male", "Homosexual", "Bisexual", 
+                  "Other", "Queer", "Questioning", "Homosexual:Male", 
+                  "Bisexual:Male", "Other:Male", "Queer:Male", 
+                  "Questioning:Male"), each = 32),  
+      rbind(aggLGBQQll, aggLGBQQ_Malell, malell, oriHomoll, oriBill, 
+            oriOtherll, oriQueerll, oriQuestionll, HomoMalell, 
+            BiMalell, OtherMalell, QueerMalell, QuestionMalell))
+
+colnames(ll)[1] <- "variable"
+
+pval4 <- ll %>% 
+  group_by(variable) %>% 
+  summarise(inmod = sum(estimate != 0 | is.na(estimate)),
+            sig = sum(estimate != 0 & is.na(pval) == F & pval < 0.05),
+            effsig = case_when(
+              sum(estimate > 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all positive",
+              sum(estimate < 0 & is.na(pval) == F & pval < 0.05) == sig ~ "all negative",
+              TRUE ~ "either positive or negative"),
+            eff = case_when(sum(estimate > 0) == inmod ~ "all positive",
+                            sum(estimate < 0) == inmod ~ "all negative",
+                            TRUE ~ "either positive or negative"),
+            freq = sig/inmod) %>% 
+  filter(sig != 0) %>% 
+  ggplot(aes(variable, fill = effsig)) +
+  geom_bar(aes(y=freq, color = eff), stat="identity", width = 0.6, size = 2) +
+  labs(x = "Variable",
+       y = "Significance frequency",
+       title = "1.D: Total loneliness score",
+       color = "Direction of all effect",
+       fill = "Direction of significant effect") + 
+  theme_minimal() +
+  theme(axis.text = element_text(size = 7),
+        axis.title = element_text(size = 10),
+        plot.title = element_text(size = 11)) +
+  scale_fill_manual(values = MyPalette2) +
+  coord_flip() +
+  ylim(0, 1) +
+  scale_color_manual(values = MyPalette2)
+
+(pval1 + pval2 + pval3 + pval4) + plot_layout(guides = 'collect')
+```
+
+Furthermore, significant predictors had robust results in terms of consistent directions of effect regardless of decisions, as shown by the either all positive or all negative filling color of bars in Figure 1. An example for such consistency was also demonstrated in Figure 2, where all the significant predictors LGBQQ had the same direction of effect for a particular response. On the other hand, the effect directions could be either positive or negative if we consider all models regardless of the predictor's statistical significance in the model, indicated as the outline color of bars in Figure 1. For example, LGBQQ had a mix of positive and negative estimates for total loneliness score as demonstrated by the blue outline in Figure 1.D and a mix of red and yellow intervals in Figure 2.D. However, predictors that were significant in at least one model for life satisfaction had consistent direction of effect across all universes or models for this response, even if they may not be significant in all models, shown as the same color of fillings and outlines of the bars in Figure 1.A. Compared to heterosexual individuals, all sexual minority groups, aggregated or not, appeared to have negative estimate and thus lower life satisfaction, as shown in Figure 1.A. In sexual and singlehood satisfaction model, most sexual minority groups had positive estimates when compared to heterosexual, except for bisexuals having negative estimate for sexual satisfaction. On the contrary, most sexual minority groups had positive estimates for total loneliness score comparing to heterosexual, with the exception of the other orientation. Male, when comparing with female, had negative estimate for life, sexual and singlehood satisfaction, and total loneliness score, meaning that males appeared to be less satisfied in life, sexual and singlehood but felt less lonely. Male-sexual minority interaction terms appeared to have different directions of effects, where in sexual satisfaction models, questioning-male interaction effect was negative but homosexual and aggregated LGBQQ-male interaction effects were positive. Also note that Figure 1.A showed consistent negative direction across predictors regardless of their significance, but Figure 1.D showed that most predictors in total loneliness models had mixed directions in models where they were and were not significant in.
+
+Compared to Figure 1 which focused on the proportion of significant predictors for each response, Figure 2 is a detailed plot for the significance, direction and magnitude of effect for LGBQQ in all 128 models. The y-axis in Figure 2 indicated the magnitude of estimate for LGBQQ. Because of the proportional odds assumption violation in our study, the magnitude of model estimates may not be reliable, but we could observe that in general, the universes with random effects (Universe 25 to 28) had the greatest magnitude for LGBQQ estimate. This may because that cumulative link mixed models accounted for the individual-level of variation and the correlation of the two survey responses within the same participant, thus the model could explain more variability between the predictor and response. 
+
+```{r, echo=FALSE, fig.width=10, fig.height=7.4, fig.cap="Estimates, confidence intervals and significance of LGBQQ. The statistical significance was color-coded, and confidence\nintervals were shown as error bars. The dots at the axis with 0 estimate indicated that LGBQQ was not in the model. All red dots\n(significant) had the same direction of effect, whereas the yellow dots (insignificant) may have the opposite direction of effect, as\nshown in the case of total loneliness score."}
+MyPalette <- c("Significant" = "#A92420", "Not significant" = "#D1913E", "Not in model" = "#2B5615")
+
+fig2ls <- aggLGBQQ %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 6, angle = 90, vjust = 0.5),
+        legend.key.size = unit(0.5, 'cm')) +
+  labs(x = "Universe", y = "Estimate of LGBQQ", 
+       title = "2.A: Life satisfaction", color= "Statistical Significance") +
+  scale_color_manual(values = MyPalette)
+
+fig2ss <- aggLGBQQss %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 6, angle = 90, vjust = 0.5),
+        legend.key.size = unit(0.5, 'cm')) +
+  labs(x = "Universe", y = "Estimate of LGBQQ", 
+       title = "2.B: Sexual satisfaction", color= "Statistical Significance") +
+  scale_color_manual(values = MyPalette)
+
+fig2rs <-aggLGBQQrs %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         # if all values are na, then no such interaction combination
+                         TRUE ~ "Not in model")) %>% 
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 6, angle = 90, vjust = 0.5),
+        legend.key.size = unit(0.5, 'cm')) +
+  labs(x = "Universe", y = "Estimate of LGBQQ", 
+       title = "2.C: Satisfaction with singlehood", color= "Statistical Significance") +
+  scale_color_manual(values = MyPalette)
+
+
+fig2ll <-aggLGBQQll %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% 
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 6, angle = 90, vjust = 0.5),
+        legend.key.size = unit(0.5, 'cm')) +
+  labs(x = "Universe", y = "Estimate of LGBQQ", 
+       title = "2.D: Total loneliness score", color= "Statistical Significance") +
+  scale_color_manual(values = MyPalette)
+
+(fig2ls + fig2ss + fig2rs + fig2ll) + plot_layout(guides = 'collect')
+```
+
+On the other hand, we compared the goodness-of-fit of the nested models. The likelihood ratio tests between all nested models revealed that for all CLMs of life satisfaction, sexual satisfaction, and satisfaction with singlehood, we preferred the more complex model for our data. We failed to reject the null hypothesis that the simpler model fitted the data as well as the more complex model in some likelihood ratio tests for CLMs of total loneliness score and CLMMs of all responses. All those tests that we failed to reject were different in the inclusion of gender. On the other hand, the likelihood ratio tests preferred the models that controlled for confounders age, race and length of singlehood. When inspecting the distribution of length of singlehood, we found that it was a bimodal distribution due to a large amount of people who were perpetually single and had never been in a relationship, as shown in Appendix Figure 4. The variable length of singlehood had a p-value<0.05 in 93.75\% of models of life satisfaction and 100\% of models for sexual satisfaction that controlled for this confounder. However, this variable was significant in only 43.75\% of models for satisfaction with singlehood and 50\% of models for total loneliness score controlling for confounders. Thus, length of singlehood appeared to have a stronger relationship with life and sexual satisfaction that was resilient to different data manipulation and modeling decisions.
+
+In essence, the multiverse analysis showed that the LGBQQ variable, some of the sexual minority subgroups, and the gender, were significant predictors for all four responses. Sexual minorities were more satisfied in their sex life and relationship status than heterosexual people, but they were less happy in life and felt lonelier. Males were less happy in all satisfaction measurements but felt less lonely compared to females. Due to the proportional odds assumption violation in the study, we would not focus on the potentially unreliable magnitude of model estimates.
+
+# Discussion 
+
+With an increased societal acceptance of being happily single, it is recognized that the satisfaction measurements of single individuals may vary based on their sexual orientation and gender identities. Using two surveys conducted 6-month apart in 2022, the study aims to perform an exploratory analysis of how life satisfaction, sexual satisfaction, satisfaction with being single, and loneliness levels of single people may vary depending on their sexual orientations and genders. 
+
+Having recognized the impact of of arbitrary decisions on findings, a multiverse analysis approach was implemented and a total of 128 models or universes was built and examined. Based on the 128 universes, the predictor aggregated LGBQQ appeared to be the most frequently significant in models of life satisfaction, sexual satisfaction, satisfaction with singlehood and total loneliness score. However, when further dividing down the sexual minority group, some subgroups of LGBQQ were significant in a higher proportion of models, depending on different responses. Questioning, bisexual and other were significant in all responses, where questioning and other were overall more frequently significant, implying that their statistical significance was more robust to different decisions. Homosexual and queer appeared to be significant in models for three responses, and they were not significant in any models for satisfaction with singlehood and total loneliness score, respectively. This makes sense because when LGBQQ subgroups were aggregated, we had a greater group size and thus may reveal the difference in satisfaction level between LGBQQ people and heterosexual people. However, when we subdivided LGBQQ into subgroups, the smaller subgroup size may not be enough to reveal the minor differences between the sexual minority subgroups and heterosexual people. On the other hand, the male gender appeared to be significant in all life, sexual and singlehood satisfaction models and some total loneliness score models, meaning that the significance of gender to satisfaction measurements may be robust to arbitrary decisions. Only some of the male-sexual orientation interaction terms were significant in sexual and singlehood satisfaction and total loneliness score models, but their significance frequency was on the lower side.
+
+In terms of the direction of effects, it appeared that all predictors had consistent directions in the models that they were significant in, but could have mixed directions in all models containing them. Different from the Minority Stress Theory, aggregated LGBQQ and all sexual minority subgroups had higher sexual satisfaction and satisfaction of singlehood than heterosexual, except for bisexual individuals feeling less satisfied in their sex life. However, LGBQQ individuals felt less satisfied in life and more lonely, in accordance with Minority Stress Theory. This makes sense because there is a close relationship of sex and singlehood to one's sexual orientation and thus may involve a narrower, more intimate circle with individuals with similar sexualities and social identities. However, life satisfaction and loneliness may be influenced by a wider range of factors such as social support, economic stability, and personal fulfillment, which may be a major source of social stigma and stress implied in the Minority Stress Theory. On the other hand, male individuals appeared to have low life, sexual and singlehood satisfaction, but felt less lonely, comparing to female individuals. Interestingly, the interaction between male and sexual orientation appeared to have different directions of effects depending on the sexual minority group or subgroup that interacted with gender. For instance, in sexual satisfaction models, questioning-male interaction had negative effects but homosexual and aggregated LGBQQ-male interaction effects were positive. We could also infer that the response life satisfaction was more robust to different decisions because the directions of effect for the variables that were significant in at least one universe were consistent in all models, even in those models where they were not statistically significant. On the other hand, most predictors in total loneliness models appeared to have different directions of effect in models where they were and were not significant in, implying that the results for total loneliness may be less robust to changes.
+
+Most likelihood ratio tests preferred complex models with confounders, with the exceptions in CLMs for total loneliness score and CLMMs for all responses. Among the tests where we preferred the simpler model, the difference in the two models was the inclusion of gender. However, because the male gender was a significant predictor in most models with gender across four responses while the male-sexual orientation interaction effects were less frequently significant, we inferred that it was the male-sexual orientation interaction terms that resulted in the preference of exclusion of gender in some CLMs and CLMMs. In general, male-sexual orientation interaction terms were less frequently statistically significant and had inconsistent directions for all four responses. Thus, future studies may decide to not interact gender with sexual orientations. Among the confounders, length of singlehood has a bimodal distribution because many people in this study had never been in a relationship. The variable length of singlehood appeared to be significant in almost all models for life and sexual satisfaction but only in half of the models for satisfaction with singlehood and total loneliness score, that controlled for confounders. As a result, we inferred that there may be a stronger effect of length of singlehood on life and sexual satisfaction that may be examined in future studies.
+
+The multiverse analysis with 128 models provided some insights in to the credibility and robustness of each result. Firstly, the magnitude of estimates may not be reliable because of the proportional odds assumption violation, so more attention was paid to the significance and direction of effects. Because the sample size of sexual minority subgroups were small compared to heterosexual individuals or the aggregated LGBQQ group, the varying effect of subgroups for different responses may change if we were to obtain more samples. On the other hand, because the aggregated LGBQQ group has a relatively greater sample size, its significance and effect direction were more consistent and robust. However, even with this limitation, when there was frequent significance or consistent direction of effect for a sexual minority on a response across the different decision branches, it implied that the effect of this predictor on this response was robust and could be the focus of future studies. 
+
+There were several strengths about this study. With lots of participants in both baseline and follow-up surveys, we had large sample sizes after data exclusion and merging. Also, the sample consisted of people with diverse racial backgrounds, which could reduce bias in the study. This study was also limited in several perspectives. Despite the multiverse analysis, the study could still be confounded, because we had limited demographic information on the participants and could not account for some variables such as geographical religious and cultural background. The nature of the multiple universes was likewise limited, as 128 universes did not encompass all potential variations. Also, the responses to Likert scales were subjective and based on honesty. Also, we summed the three Likert scales for a total loneliness score, which may not be meaningful because the question options were not numeric in nature. Because the follow-up data did not recollect demographic information, we assumed that gender and sexual orientations remained the same throughout the 6 months, acknowledging that they could be fluid. Another limitation of this study was that the number of sexual and gender minority individuals may still be too small to capture a significant difference in the responses. A previous analysis with the male-lesbian and female-gay subgroups revealed complete separation and missing estimate problems because the prediction may be too perfect in those very small groups. Although this was not an issue in this analysis with only the combined homosexual group, it was still a limitation to be aware of. Also, the violation of the proportional odds assumption may lead to unreliable magnitude, which implies that we may not be able to capture the dynamics across levels of a response using a single model (Harrell, 2020). Further investigation could compare the difference between every two levels of a satisfaction measurement. Finally, due to the nature of exploratory analysis, we were not able to make causal inferences and our results were less robust than those of a randomized control trial. 
+
+# Conclusion
+
+With the purpose of exploring the differences in life satisfaction, sexual satisfaction, satisfaction with single status, and total loneliness scores among single adults with various sexual orientations and gender identities, we conducted a multiverse analysis with 128 cumulative linked models or cumulative linked mixed models. We found that LGBQQ, some sexual minority subgroups and gender were frequently significant for all responses. **Compared to heterosexuals, LGBQQ persons appeared to have higher sexual and singlehood satisfaction, but lower life satisfaction and increased loneliness.** Males, on the other hand, appeared to be less content with their life, sex life, and singlehood, but experienced less loneliness. In contrast, male-sexual orientation interaction terms exhibited lower effects, mixed directions, and were less frequently statistically significant in all models across four responses.
+
+Based on the results of this multiverse analysis, there are some future directions that may be explored regarding the intricacies of singlehood and personal well-being. Future research with a greater sample size for sexual minorities is needed to enhance the reliability and credibility of results. In terms of confounders, it may also be interesting to investigate a potential difference in the satisfaction levels for individuals who are long-term single or transiently single, as we saw two distinctive groups of people with different length of singlehood. Additionally, future studies could consider the effects of other confounders, such as cultural, religious, and environmental factors, on the responses of sexual minority individuals. Researchers may also want to consider employing longitudinal designs over a longer period of time to track the changes in responses over time and the impact of different predictors on these changes. Eventually, we can obtain a greater knowledge of the nuances of the human experience and strive toward establishing a society that is more inclusive and supportive for all.
+
+# Reference
+
+Christensen, R. H. B. (2019). *A Tutorial on fitting Cumulative Link Mixed Models with clmm2 from the ordinal Package.*  https://cran.r-project.org/web/packages/ordinal/Accessed
+
+Christensen, R. H. B. (2018). Cumulative link models for ordinal regression with the R package ordinal. *Submitted in J. Stat. Software*, 35.
+
+Harrell, F. (2020). Violation of Proportional Odds is Not Fatal. *Statistical Thinking.* https://www.fharrell.com/post/po/
+
+Mark, K. P., Garcia, J. R., & Fisher, H. E. (2015). Perceived emotional and sexual satisfaction across sexual relationship contexts: Gender and sexual orientation differences and similarities. *The Canadian Journal of Human Sexuality, 24*(2), 120-130. https://doi.org/10.3138/cjhs.242-A8.
+
+McNulty, K. (2021). *Handbook of regression modeling in people analytics: with examples in R and Python.* Chapman and Hall/CRC.
+
+Meyer, I. H. (2003). Prejudice, social stress, and mental health in lesbian, gay, and bisexual populations: conceptual issues and research evidence. *Psychological bulletin, 129*(5), 674-697. https://doi.org/10.1037/0033-2909.129.5.674.
+
+*Ordinal logistic regression | R data analysis examples.* UCLA: Statistical Consulting Group. (n.d.). Retrieved February 27, 2023, from https://stats.idre.ucla.edu/r/dae/ordinal-logistic-regression/ 
+
+Russell, D. (1996). UCLA Loneliness Scale (Version 3): Reliability, validity, and factor structure. *Journal of Personality Assessment, 66*, 20-40.
+
+Steegen, S., Tuerlinckx, F., Gelman, A., & Vanpaemel, W. (2016). Increasing Transparency Through a Multiverse Analysis. *Perspectives on psychological science : a journal of the Association for Psychological Science, 11*(5), 702-712. https://doi.org/10.1177/1745691616658637
+
+Wong, M. (2021). _pomcheckr: Graphical Check for Proportional Odds Assumption_. R package version 0.1.1, https://CRAN.R-project.org/package=pomcheckr.
+
+# Appendix
+
+```{r, message=F}
+merged.wide[,c(2:5,7,17)] %>% 
+  tbl_summary(
+      statistic = list(all_continuous() ~ "{mean} ({sd})", 
+                       all_categorical() ~ "{n} ({p}%)"),
+      digits = all_continuous() ~ 1,                              
+      type   = all_categorical() ~ "categorical",           
+      label  = list(                                            
+        gender ~ "Gender",
+        orientation ~ "Sexual Orientation",
+        race ~ "Race",
+        age ~ "Age",
+        relationship.end_1 ~ "Length of Singlehood: Baseline",
+        relationship.end_2 ~ "Length of Singlehood: Follow-up"),
+      missing_text = "Missing"                                   
+    )  %>% 
+  modify_caption("Demographic characteristics of participants in merged data set with both baseline and follow-up survey data. Note that Table 2 did not reveal the two different participants with missing sexual satisfaction, one in baseline and the other in follow-up data. We filtered the missing value for sexual satisfaction model, so the sample size was reduced by 1 in those universes.") %>% 
+  as_kable_extra(booktab = T,
+                 linesep = "") %>% 
+  kable_styling(font_size = 11) %>% 
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r, echo = FALSE}
+choices <- data.frame(
+  data = c(rep("Baseline", 8),rep("Follow-up", 8),rep("Average of both", 8),
+           rep("Repetitive measurement", 8)),
+  sexual_orientation = c(rep("LGBQQ aggregated", 4), 
+                         rep("LGBQQ unaggregated", 4)),
+  control = rep(c(rep("Do not control",2), rep("Control",2)),4),
+  gender = rep(c("No gender","Male vs Female"), 16),
+  universes = 1:32)
+
+choices %>% 
+  kableExtra::kable(booktab = T,
+                    linesep = " ",
+                    col.names = c("Data Used", "Sexual Orientation",
+                                  "Control for Confounders","Gender Interaction", "Universe"),
+                    caption = "Structure of Multiverse Analysis. This table demonstrates the decision branches for each response in our study, resulting in a total of 32 universes or models for one response, and 128 universes or models in total in this study.") %>% 
+  kable_styling(latex_options = c("HOLD_position")) %>% 
+  column_spec(5, bold = T, width = "1.5cm") %>% 
+  column_spec(1:2, width = "4cm") %>% 
+  column_spec(3:4, width = "2.5cm") %>% 
+  collapse_rows(1:4, valign = "top")
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=8, fig.cap="Estimates, confidence intervals and significance of male. Blue points in life satisfaction and satisfaction of singlehood indicated complete separation. Except for complete separation, male appeared to be all significant and negative in satisfaction with singlehood. The direction of effect for male were consistently negative regardless of its significance in the model, but male had a mixed-direction and potentially weaker effect on total loneliness score."}
+fig3ls <- male %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  labs(x = "Universe", y = "Estimate of male", 
+       title = "3.A: Life satisfaction", color= "Statistical significance") +
+  scale_color_manual(values = MyPalette)
+
+fig3ss <- maless %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  labs(x = "Universe", y = "Estimate of male", 
+       title = "3.B: Sexual satisfaction", color= "Statistical significance") +
+  scale_color_manual(values = MyPalette)
+
+fig3rs <- malers %>%
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model",
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  labs(x = "Universe", y = "Estimate of male",
+       title = "3.C: Satisfaction of singlehood", color= "Statistical significance") +
+  scale_color_manual(values = MyPalette)
+
+
+fig3ll <- malell %>% 
+  mutate(sig = case_when(estimate != 0 & pval == 0 ~ "Significant",
+                         0 < pval & pval < 0.05 ~ "Significant",
+                         estimate != 0 & pval >= 0.05 ~ "Not significant",
+                         # simply not a predictor
+                         estimate == 0 & se == 0 & stat == 0 & pval == 0 ~ "Not in model", 
+                         is.na(pval) & is.na(estimate) == F ~ "Complete separation",
+                         TRUE ~ "Not in model")) %>% # if all values are na, then no such combo
+  ggplot(aes(factor(universe), estimate, color = sig)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin=estimate-1.96*se, ymax=estimate+1.96*se), width=.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  labs(x = "Universe", y = "Estimate of male", 
+       title = "3.D: Total loneliness score", color= "Statistical significance") +
+  scale_color_manual(values = MyPalette)
+
+(fig3ls + fig3ss + fig3rs + fig3ll) + plot_layout(guides = 'collect')
+```
+
+```{r, eval = F}
+# perform likelihood ratio tests on all nested models
+
+mylrr <- function(x){
+  p <- list()
+  for (i in 2:4){
+    p <- append(p, anova(x[[1]], x[[i]])$"Pr(>Chisq)"[2])
+  }
+  
+  p <- append(p, anova(x[[2]], x[[4]])$"Pr(>Chisq)"[2])
+  p <- append(p, anova(x[[3]], x[[4]])$"Pr(>Chisq)"[2])
+  
+  for (i in 6:8){
+    p <- append(p, anova(x[[5]], x[[i]])$"Pr(>Chisq)"[2])
+  }
+  
+  p <- append(p, anova(x[[6]], x[[8]])$"Pr(>Chisq)"[2])
+  p <- append(p, anova(x[[7]], x[[8]])$"Pr(>Chisq)"[2])
+  
+  modtest <- c("1 vs 2","1 vs 3","1 vs 4","2 vs 4","3 vs 4",
+               "5 vs 6","5 vs 7","5 vs 8","6 vs 8","7 vs 8")
+  
+  dat <- data.frame(modtest = modtest, pval = unlist(p)) %>% 
+    mutate(decision = ifelse(pval < 0.05, "choose complex model", "choose simple model"))
+  
+  return(dat)
+}
+
+mylrr.mixed <- function(x){
+  p <- list()
+  for (i in 2:4){
+    p <- append(p, lmtest::lrtest(mixed_ll[[1]], mixed_ll[[i]])$"Pr(>Chisq)"[2])
+  }
+  
+  p <- append(p, lmtest::lrtest(mixed_ll[[2]], mixed_ll[[4]])$"Pr(>Chisq)"[2])
+  p <- append(p, lmtest::lrtest(mixed_ll[[3]], mixed_ll[[4]])$"Pr(>Chisq)"[2])
+  
+  for (i in 6:8){
+    p <- append(p, lmtest::lrtest(mixed_ll[[5]], mixed_ll[[i]])$"Pr(>Chisq)"[2])
+  }
+  
+  p <- append(p, lmtest::lrtest(mixed_ll[[6]], mixed_ll[[8]])$"Pr(>Chisq)"[2])
+  p <- append(p, lmtest::lrtest(mixed_ll[[7]], mixed_ll[[8]])$"Pr(>Chisq)"[2])
+  
+  modtest <- c("1 vs 2","1 vs 3","1 vs 4","2 vs 4","3 vs 4",
+               "5 vs 6","5 vs 7","5 vs 8","6 vs 8","7 vs 8")
+  
+  dat <- data.frame(modtest = modtest, pval = unlist(p)) %>% 
+    mutate(decision = ifelse(pval < 0.05, "choose complex model", "choose simple model"))
+  
+  return(dat)
+}
+
+likelihoodtests <- rbind(mylrr(wave1_ls) %>% mutate(dat_res = rep("wave1_ls", 10)),
+                        mylrr(wave1_ss) %>% mutate(dat_res = rep("wave1_ss", 10)),
+                        mylrr(wave1_rs) %>% mutate(dat_res = rep("wave1_rs", 10)),
+                        mylrr(wave1_ll) %>% mutate(dat_res = rep("wave1_ll", 10)),
+                        mylrr(wave2_ls) %>% mutate(dat_res = rep("wave2_ls", 10)),
+                        mylrr(wave2_ss) %>% mutate(dat_res = rep("wave2_ss", 10)),
+                        mylrr(wave2_rs) %>% mutate(dat_res = rep("wave2_rs", 10)),
+                        mylrr(wave2_ll) %>% mutate(dat_res = rep("wave2_ll", 10)),
+                        mylrr(avg_ls) %>% mutate(dat_res = rep("avg_ls", 10)),
+                        mylrr(avg_ss) %>% mutate(dat_res = rep("avg_ss", 10)),
+                        mylrr(avg_rs) %>% mutate(dat_res = rep("avg_rs", 10)),
+                        mylrr(avg_ll) %>% mutate(dat_res = rep("avg_ll", 10)),
+                        mylrr.mixed(mixed_ls) %>% mutate(dat_res = rep("mixed_ls", 10)),
+                        mylrr.mixed(mixed_ss) %>% mutate(dat_res = rep("mixed_ss", 10)),
+                        mylrr.mixed(mixed_rs) %>% mutate(dat_res = rep("mixed_rs", 10)),
+                        mylrr.mixed(mixed_ll) %>% mutate(dat_res = rep("mixed_ll", 10))) 
+
+likelihoodtests %>% 
+  filter(decision == "choose simple model") %>% 
+  kableExtra::kable(booktab = T, linesep = "",
+        col.names = c("Test models", "p-value", 
+                      "Likelihood ratio test decision", "Data and response"),
+        caption = "Summary of failed likelihood ratio tests of nested models. For baseline, follow-up and average data, we only chose simpler CLMs of total loneliness score. On the other hand, we prefered simpler CLMMs in 3 out of 10 likelihood ratio tests for each response.") %>% 
+  kable_styling(latex_options = "HOLD_position") %>% 
+  footnote(c("Wave1 denotes baseline data, wave2 denotes follow-up data, avg denotes average", "data, and mixed denotes multiple measurement CLMMs.", "Abbrevations: ls as life satisfaction, ss as sexual satisfaction, rs as relationship", "satisfaction, ll as total loneliness scores"))
+
+summary(mixed_ls[[3]])
+summary(mixed_ls[[4]])
+lmtest::lrtest(mixed_ls[[3]],mixed_ls[[4]])
+```
+
+```{r, eval = F}
+# look at length of singlehood
+
+mylist = list()
+
+for (i in 1:length(wave1_ls)){
+  ifelse("relationship.end_1" %in% rownames(summary(wave1_ls[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave1_ls[[i]])$coefficients["relationship.end_1",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(wave2_ls)){
+  ifelse("relationship.end_2" %in% rownames(summary(wave2_ls[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave2_ls[[i]])$coefficients["relationship.end_2",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(avg_ls)){
+  ifelse("relationship.end" %in% rownames(summary(avg_ls[[i]])$coefficients),
+         mylist <- append(mylist,summary(avg_ls[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(mixed_ls)){
+  ifelse("relationship.end" %in% rownames(summary(mixed_ls[[i]])$coefficients),
+         mylist <- append(mylist,summary(mixed_ls[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+mycoef_ls <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4,
+         sig = case_when(estimate != 0 & is.na(pval) == F & pval < 0.05 ~ "significant",
+                         estimate == 0 ~ "not in model",
+                         TRUE ~ "not significant"))  %>% 
+  select(-c(V1, V2, V3, V4))
+
+mylist = list()
+
+for (i in 1:length(wave1_ss)){
+  ifelse("relationship.end_1" %in% rownames(summary(wave1_ss[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave1_ss[[i]])$coefficients["relationship.end_1",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(wave2_ss)){
+  ifelse("relationship.end_2" %in% rownames(summary(wave2_ss[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave2_ss[[i]])$coefficients["relationship.end_2",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(avg_ss)){
+  ifelse("relationship.end" %in% rownames(summary(avg_ss[[i]])$coefficients),
+         mylist <- append(mylist,summary(avg_ss[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(mixed_ss)){
+  ifelse("relationship.end" %in% rownames(summary(mixed_ss[[i]])$coefficients),
+         mylist <- append(mylist,summary(mixed_ss[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+mycoef_ss <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+    mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4,
+         sig = case_when(estimate != 0 & is.na(pval) == F & pval < 0.05 ~ "significant",
+                         estimate == 0 ~ "not in model",
+                         TRUE ~ "not significant"))   %>% 
+  select(-c(V1, V2, V3, V4))
+
+mylist = list()
+
+for (i in 1:length(wave1_rs)){
+  ifelse("relationship.end_1" %in% rownames(summary(wave1_rs[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave1_rs[[i]])$coefficients["relationship.end_1",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(wave2_rs)){
+  ifelse("relationship.end_2" %in% rownames(summary(wave2_rs[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave2_rs[[i]])$coefficients["relationship.end_2",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(avg_rs)){
+  ifelse("relationship.end" %in% rownames(summary(avg_rs[[i]])$coefficients),
+         mylist <- append(mylist,summary(avg_rs[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(mixed_rs)){
+  ifelse("relationship.end" %in% rownames(summary(mixed_rs[[i]])$coefficients),
+         mylist <- append(mylist,summary(mixed_rs[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+mycoef_rs <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+  mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4,
+         sig = case_when(estimate != 0 & is.na(pval) == F & pval < 0.05 ~ "significant",
+                         estimate == 0 ~ "not in model",
+                         TRUE ~ "not significant"))  %>% 
+  select(-c(V1, V2, V3, V4))
+
+mylist = list()
+
+for (i in 1:length(wave1_ll)){
+  ifelse("relationship.end_1" %in% rownames(summary(wave1_ll[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave1_ll[[i]])$coefficients["relationship.end_1",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(wave2_ll)){
+  ifelse("relationship.end_2" %in% rownames(summary(wave2_ll[[i]])$coefficients),
+         mylist <- append(mylist,summary(wave2_ll[[i]])$coefficients["relationship.end_2",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(avg_ll)){
+  ifelse("relationship.end" %in% rownames(summary(avg_ll[[i]])$coefficients),
+         mylist <- append(mylist,summary(avg_ll[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+for (i in 1:length(mixed_ll)){
+  ifelse("relationship.end" %in% rownames(summary(mixed_ll[[i]])$coefficients),
+         mylist <- append(mylist,summary(mixed_ll[[i]])$coefficients["relationship.end",]),
+         mylist <- append(mylist, rep(0,4)))
+}
+
+mycoef_ll <- as.data.frame(matrix(unlist(mylist), nrow = 32, ncol = 4, byrow = T)) %>% 
+  mutate(universe = 1:32, estimate = V1,se = V2,stat = V3, pval = V4,
+         sig = case_when(estimate != 0 & is.na(pval) == F & pval < 0.05 ~ "significant",
+                         estimate == 0 ~ "not in model",
+                         TRUE ~ "not significant"))  %>% 
+  select(-c(V1, V2, V3, V4))
+
+sum(mycoef_ls$sig == "significant")/sum(mycoef_ls$sig != "not in model")
+sum(mycoef_ss$sig == "significant")/sum(mycoef_ss$sig != "not in model")
+sum(mycoef_rs$sig == "significant")/sum(mycoef_rs$sig != "not in model")
+sum(mycoef_ll$sig == "significant")/sum(mycoef_ll$sig != "not in model")
+```
+
+```{r, fig.height=8, fig.width=8, fig.cap="Baseline length of singlehood. All the histograms in Figure 4 appeared to be bimodal because there were people who had never been in a relationship before, and their length of singlehood was imputed as their age multiplied by 12. Also, there did not appear to be obvious differences in the length of singlehood for people with different genders and sexual orientations."}
+s1 <- survey1 %>% 
+  ggplot(aes(x = relationship.end_1)) +             
+  geom_histogram(aes(y=..density..), color= "white") +
+  labs(x = "Length of Singlehood") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+s2 <- survey1 %>% 
+  ggplot(aes(x = relationship.end_1, fill = orientation)) +             
+  geom_histogram(aes(y=..density..), binwidth=50, color= "white") +
+  facet_wrap(~ orientation) +
+  labs(x = "Length of Singlehood") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+s3 <- survey1 %>% 
+  ggplot(aes(x = relationship.end_1, fill = gender)) +             
+  geom_histogram(aes(y=..density..), binwidth=50, color= "white") +
+  facet_wrap(~ gender) +
+  labs(x = "Length of Singlehood") +
+  theme_minimal() +
+  theme(legend.position = "none")  +
+  scale_fill_brewer(palette="Dark2")
+
+(s1 / (s2 | s3))
+```
+
+```{r, fig.height=3}
+plot(pomcheck(LS_1 ~ orientation, data = survey1))
+plot(pomcheck(SWRS1_1 ~ orientation, data = survey1))
+```
+
+Figure 5: Proportional odds assumption diagnostic plots for sexual orientation in baseline life and sexual satisfaction. The first plot in Figure 5 was for baseline life satisfaction and the second one is for baseline satisfaction with singlehood. In the first graph, the distances between the red and blue dots for some levels of the variable were similar, whereas the distances were more drastically different in the second plot, which suggested a violation of proportional odds assumption. Figure 5 is based on a method proposed by UCLA Statistical Consulting Group (n.d.).
+
+
